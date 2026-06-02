@@ -1,0 +1,76 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html, body {
+    overflow-x: hidden;
+    max-width: 100%;
+  }
+  html {
+    font-family: 'Inter', system-ui, sans-serif;
+    -webkit-tap-highlight-color: transparent;
+  }
+  body {
+    @apply bg-gray-50 text-gray-900 antialiased;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-primary-800 text-white px-4 py-2 rounded-xl font-medium hover:bg-primary-700 active:bg-primary-900 transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-secondary {
+    @apply bg-white text-primary-800 border border-primary-200 px-4 py-2 rounded-xl font-medium hover:bg-primary-50 active:bg-primary-100 transition-colors;
+  }
+  .card {
+    @apply bg-white rounded-2xl shadow-sm border border-gray-100 p-4 overflow-hidden;
+  }
+  .input {
+    @apply w-full border border-gray-300 rounded-xl px-4 py-3 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all;
+  }
+}
+
+/* ── Animation keyframes ── */
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20%       { transform: translateX(-8px); }
+  40%       { transform: translateX(8px); }
+  60%       { transform: translateX(-5px); }
+  80%       { transform: translateX(5px); }
+}
+@keyframes slide-in-right {
+  from { opacity: 0; transform: translateX(28px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes float-up-fade {
+  0%   { opacity: 1; transform: translateY(0) scale(1); }
+  20%  { opacity: 1; transform: translateY(-12px) scale(1.1); }
+  100% { opacity: 0; transform: translateY(-70px) scale(0.9); }
+}
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(0.88); }
+  to   { opacity: 1; transform: scale(1); }
+}
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes bounce-in {
+  0%   { opacity: 0; transform: scale(0.82); }
+  60%  { transform: scale(1.04); opacity: 1; }
+  100% { transform: scale(1); }
+}
+@keyframes correct-flash {
+  0%   { opacity: 0; }
+  15%  { opacity: 0.38; }
+  100% { opacity: 0; }
+}
+
+.animate-shake         { animation: shake 0.42s ease-in-out; }
+.animate-slide-in      { animation: slide-in-right 0.28s ease-out; }
+.animate-float-up      { animation: float-up-fade 1.3s ease-out forwards; }
+.animate-scale-in      { animation: scale-in 0.32s ease-out; }
+.animate-fade-in       { animation: fade-in 0.28s ease-out; }
+.animate-bounce-in     { animation: bounce-in 0.38s ease-out; }
+.animate-correct-flash { animation: correct-flash 0.6s ease-out forwards; }
