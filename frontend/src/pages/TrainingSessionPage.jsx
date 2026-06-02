@@ -466,6 +466,11 @@ export default function TrainingSessionPage() {
           {currentEx?.source === 'new' ? '✨ Новое'
             : currentEx?.source === 'weak' ? '⚠️ Слабое место'
             : currentEx?.source === 'bonus' ? '🚀 Бонус'
+            : currentEx?.source === 'vocab' ? '📚 Слова'
+            : currentEx?.source === 'topic_d' ? '📖 Тема'
+            : currentEx?.source === 'topic' ? '📖 Тема'
+            : currentEx?.source === 'review_ai' ? '🔄 Повторение AI'
+            : currentEx?.source === 'practice' ? '🔁 Практика'
             : '🔄 Повторение'}
         </span>
         {currentEx?.topic_title && (

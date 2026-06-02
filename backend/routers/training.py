@@ -2133,8 +2133,8 @@ async def _generate_daily_pool(user, db: Session, today, count: int):
         models.DailyExercise.source.in_(["new", "bonus", "review_ai"]),
     ).order_by(models.DailyExercise.next_review).limit(3).all()
 
-    # AI fills whatever is left; always at least half the session
-    ai_target = max(count - len(weak_exs) - len(due_vocab) - len(ai_due), count // 2)
+    # AI fills whatever is left; reserve ~6 slots for new_vocab(2) and topic_d(~4)
+    ai_target = max(count - len(weak_exs) - len(due_vocab) - len(ai_due) - 6, count // 4)
 
     interest_themes_str = "не заданы (используй разнообразные темы)"
     if prefs and prefs.interest_themes:
@@ -2213,7 +2213,7 @@ async def _generate_daily_pool(user, db: Session, today, count: int):
         }, ensure_ascii=False)
         entries.append(models.DailyExercise(
             user_id=user.id, date=today, exercise_type="flashcard",
-            content=content, source="review",
+            content=content, source="vocab",
         ))
 
     # Pool-first: serve unseen exercises from shared pool, generate only the deficit
