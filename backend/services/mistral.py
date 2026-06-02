@@ -1,3 +1,4 @@
+import asyncio
 import httpx
 import json
 import os
@@ -80,8 +81,15 @@ async def chat_completion(
             except httpx.HTTPStatusError as e:
                 _log_call(used_model, purpose, user_id, 0, 0, False,
                           int((time.monotonic() - t0) * 1000))
-                if e.response.status_code >= 500 and attempt < retries - 1:
-                    continue
+                status = e.response.status_code
+                if attempt < retries - 1:
+                    if status == 429:
+                        # Rate limited — wait before retrying (2s, 4s, 8s)
+                        await asyncio.sleep(2 ** (attempt + 1))
+                        continue
+                    if status >= 500:
+                        await asyncio.sleep(1)
+                        continue
                 raise
 
     raise RuntimeError("Failed after retries")
