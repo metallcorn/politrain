@@ -1046,9 +1046,10 @@ async def submit_answer(
                     old_att = prog.attempts or 0
                     prog.score = (old_score * old_att + (1.0 if is_correct else 0.0)) / (old_att + 1)
                     prog.attempts = old_att + 1
-                    # new/bonus: require ≥3 attempts before marking done (topic is covered incidentally)
-                    min_att = 2 if de.source in ("new", "bonus") else 0
-                    if prog.score >= 0.6 and old_att >= min_att:
+                    # Require meaningful practice before marking done:
+                    # new/bonus = incidental exposure, needs many reps; topic/topic_d = dedicated practice
+                    min_att = 9 if de.source in ("new", "bonus") else 5
+                    if prog.score >= 0.75 and old_att >= min_att:
                         prog.status = "done"
                     elif prog.score < 0.6:
                         prog.status = "needs_review"
@@ -1070,9 +1071,9 @@ async def submit_answer(
                                 old_att = prog.attempts or 0
                                 prog.score = (old_score * old_att + (1.0 if is_correct else 0.0)) / (old_att + 1)
                                 prog.attempts = old_att + 1
-                                if prog.score >= 0.6:
+                                if prog.score >= 0.75 and prog.attempts >= 5:
                                     prog.status = "done"
-                                else:
+                                elif prog.score < 0.6:
                                     prog.status = "needs_review"
                         c_hash = hashlib.md5(cur_ex.question.encode()).hexdigest()[:8]
                         db.add(models.UserExerciseHistory(
@@ -1193,7 +1194,9 @@ async def submit_answer(
                 result = 1.0 if is_correct else 0.0
                 progress.score = (old_score * old_attempts + result) / (old_attempts + 1)
                 progress.attempts = old_attempts + 1
-                if progress.score < 0.6:
+                if progress.score >= 0.75 and progress.attempts >= 6:
+                    progress.status = "done"
+                elif progress.score < 0.6:
                     progress.status = "needs_review"
                 db.commit()
 
@@ -1701,10 +1704,10 @@ def _select_topics_for_generation(user, db: Session, n: int = 2) -> list:
     # Sort: lower level first, then lower score first (weakest topics get priority)
     candidates.sort(key=lambda t: (_LEVEL_ORDER.index(t.level_required) if t.level_required in _LEVEL_ORDER else 99, _topic_score(t)))
 
-    # If >=60% of current+below topics are done, inject one next-level topic
+    # If >=80% of current+below topics are done, inject one next-level topic
     if next_level and all_eligible:
         coverage = 1 - len(candidates) / len(all_eligible)
-        if coverage >= 0.6:
+        if coverage >= 0.8:
             next_topics = db.query(models.Topic).filter(
                 models.Topic.explanation_ru.isnot(None),
                 models.Topic.explanation_ru != "",
