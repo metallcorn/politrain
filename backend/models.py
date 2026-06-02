@@ -22,6 +22,7 @@ class User(Base):
     onboarding_done = Column(Boolean, default=False)
     created_at = Column(DateTime, default=func.now())
     total_training_seconds = Column(Integer, default=0)
+    best_streak = Column(Integer, default=0)
 
     topic_progress = relationship("UserTopicProgress", back_populates="user", cascade="all, delete-orphan")
     vocabulary = relationship("UserVocabulary", back_populates="user", cascade="all, delete-orphan")

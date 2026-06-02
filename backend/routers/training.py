@@ -18,7 +18,7 @@ import prompts
 from services import mistral
 from services.sm2 import calculate_next_review
 from services.gamification import (
-    add_xp, XP_CORRECT, XP_INCORRECT, XP_COMPLETE_SESSION,
+    add_xp, XP_CORRECT, XP_INCORRECT, XP_VOCAB, XP_COMPLETE_SESSION,
     check_achievements, update_daily_activity, update_streak
 )
 
@@ -962,6 +962,7 @@ async def submit_answer(
     diacritic_hint = False
     correct_answer = ""
     explanation = None
+    _vocab_mode = "normal"  # "zero" = no XP (know/don't know), "reduced" = XP_VOCAB
 
     if body.daily_exercise_id:
         de = db.query(models.DailyExercise).filter(
@@ -989,6 +990,12 @@ async def submit_answer(
                 de.is_completed = True
                 de.is_correct = is_correct
                 de.completed_at = datetime.utcnow()
+
+                # XP mode for vocab flashcards
+                if de.source == "vocab":
+                    _vocab_mode = "zero"      # know/don't know — no actual quiz
+                elif ex_type == "flashcard" and content.get("vocab_id"):
+                    _vocab_mode = "reduced"   # SRS vocab — easier than exercises
 
                 # SRS scheduling for AI exercises
                 if de.source in ("new", "bonus", "review_ai"):
@@ -1139,6 +1146,7 @@ async def submit_answer(
 
     elif body.vocab_id:
         # Vocab flashcard with no daily_exercise_id — e.g. vocab errors in errors mode
+        _vocab_mode = "reduced"
         vocab = db.query(models.Vocabulary).filter(models.Vocabulary.id == body.vocab_id).first()
         if vocab:
             lang = current_user.native_language
@@ -1211,8 +1219,13 @@ async def submit_answer(
         )
         db.add(history)
 
-    if diacritic_hint:
+    if diacritic_hint and _vocab_mode == "normal":
         xp = XP_CORRECT // 2
+        add_xp(current_user, db, xp)
+    elif _vocab_mode == "zero":
+        xp = 0  # know/don't know vocab — no actual quiz, no XP
+    elif _vocab_mode == "reduced":
+        xp = XP_VOCAB if is_correct else 0
         add_xp(current_user, db, xp)
     else:
         base_xp = XP_CORRECT if is_correct else XP_INCORRECT

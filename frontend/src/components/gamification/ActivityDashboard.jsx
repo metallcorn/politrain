@@ -1,4 +1,5 @@
-import { Flame, Clock, Zap } from 'lucide-react'
+import { useState } from 'react'
+import { Flame, Clock, Zap, Trophy } from 'lucide-react'
 
 function formatTime(seconds) {
   if (!seconds) return '0 мин'
@@ -39,12 +40,14 @@ function Ring({ done, goal }) {
   )
 }
 
-function WeekChart({ week }) {
-  const max = Math.max(...week.map(d => d.exercises), 1)
+function WeekChart({ week, metric }) {
+  const values = week.map(d => metric === 'xp' ? (d.xp || 0) : d.exercises)
+  const max = Math.max(...values, 1)
   return (
     <div className="flex items-end gap-1 h-16">
-      {week.map((d) => {
-        const h = max > 0 ? Math.max((d.exercises / max) * 100, d.exercises > 0 ? 8 : 0) : 0
+      {week.map((d, i) => {
+        const val = values[i]
+        const h = max > 0 ? Math.max((val / max) * 100, val > 0 ? 8 : 0) : 0
         return (
           <div key={d.date} className="flex-1 flex flex-col items-center gap-1">
             <div className="w-full flex items-end justify-center" style={{ height: 44 }}>
@@ -52,7 +55,7 @@ function WeekChart({ week }) {
                 className={`w-full rounded-t-sm transition-all duration-500 ${
                   d.is_today
                     ? 'bg-primary-500'
-                    : d.exercises > 0
+                    : val > 0
                     ? 'bg-primary-200'
                     : 'bg-gray-100'
                 }`}
@@ -69,18 +72,20 @@ function WeekChart({ week }) {
   )
 }
 
-function MonthChart({ month }) {
-  const max = Math.max(...month.map(d => d.exercises), 1)
+function MonthChart({ month, metric }) {
+  const values = month.map(d => metric === 'xp' ? (d.xp || 0) : d.exercises)
+  const max = Math.max(...values, 1)
   return (
     <div className="flex items-end gap-px h-8">
-      {month.map((d) => {
-        const h = max > 0 ? Math.max((d.exercises / max) * 100, d.exercises > 0 ? 15 : 0) : 0
+      {month.map((d, i) => {
+        const val = values[i]
+        const h = max > 0 ? Math.max((val / max) * 100, val > 0 ? 15 : 0) : 0
         return (
           <div
             key={d.date}
-            className={`flex-1 rounded-sm ${d.exercises > 0 ? 'bg-primary-300' : 'bg-gray-100'}`}
+            className={`flex-1 rounded-sm ${val > 0 ? 'bg-primary-300' : 'bg-gray-100'}`}
             style={{ height: `${h}%` }}
-            title={`${d.date}: ${d.exercises} заданий`}
+            title={`${d.date}: ${val} ${metric === 'xp' ? 'XP' : 'заданий'}`}
           />
         )
       })}
@@ -112,6 +117,8 @@ const SOURCE_COLORS = {
 }
 
 export default function ActivityDashboard({ data }) {
+  const [metric, setMetric] = useState('exercises')
+
   if (!data) return null
 
   const { today, week, month, by_source, totals } = data
@@ -119,19 +126,24 @@ export default function ActivityDashboard({ data }) {
     ? Math.round((today.correct / today.exercises) * 100)
     : null
 
-  const weekTotal = week.reduce((s, d) => s + d.exercises, 0)
-  const monthTotal = month.reduce((s, d) => s + d.exercises, 0)
+  const weekTotal = week.reduce((s, d) => s + (metric === 'xp' ? (d.xp || 0) : d.exercises), 0)
+  const monthTotal = month.reduce((s, d) => s + (metric === 'xp' ? (d.xp || 0) : d.exercises), 0)
+
+  const bestStreak = totals.best_streak || 0
 
   return (
     <div className="flex flex-col gap-4">
       {/* Top stats chips */}
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-2 gap-2">
         <div className="card text-center py-3">
           <div className="flex items-center justify-center gap-1 mb-0.5">
             <Flame size={14} className="text-orange-500" />
             <span className="font-bold text-gray-900">{totals.streak_days}</span>
           </div>
           <p className="text-[11px] text-gray-400">дней подряд</p>
+          {bestStreak > 0 && (
+            <p className="text-[10px] text-gray-300 mt-0.5">рекорд: {bestStreak}</p>
+          )}
         </div>
         <div className="card text-center py-3">
           <div className="flex items-center justify-center gap-1 mb-0.5">
@@ -146,6 +158,13 @@ export default function ActivityDashboard({ data }) {
             <span className="font-bold text-gray-900">{totals.xp}</span>
           </div>
           <p className="text-[11px] text-gray-400">XP набрано</p>
+        </div>
+        <div className="card text-center py-3">
+          <div className="flex items-center justify-center gap-1 mb-0.5">
+            <Trophy size={14} className="text-amber-500" />
+            <span className="font-bold text-gray-900">{today.xp_today || 0}</span>
+          </div>
+          <p className="text-[11px] text-gray-400">XP сегодня</p>
         </div>
       </div>
 
@@ -182,18 +201,30 @@ export default function ActivityDashboard({ data }) {
       <div className="card">
         <div className="flex items-center justify-between mb-3">
           <p className="text-xs text-gray-400 uppercase tracking-wide">Эта неделя</p>
-          <p className="text-xs font-semibold text-gray-600">{weekTotal} заданий</p>
+          <div className="flex items-center gap-2">
+            <p className="text-xs font-semibold text-gray-600">
+              {weekTotal} {metric === 'xp' ? 'XP' : 'заданий'}
+            </p>
+            <button
+              onClick={() => setMetric(m => m === 'exercises' ? 'xp' : 'exercises')}
+              className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 hover:bg-gray-200 transition-colors"
+            >
+              {metric === 'exercises' ? 'XP' : 'задания'}
+            </button>
+          </div>
         </div>
-        <WeekChart week={week} />
+        <WeekChart week={week} metric={metric} />
       </div>
 
       {/* Month */}
       <div className="card">
         <div className="flex items-center justify-between mb-3">
           <p className="text-xs text-gray-400 uppercase tracking-wide">30 дней</p>
-          <p className="text-xs font-semibold text-gray-600">{monthTotal} заданий</p>
+          <p className="text-xs font-semibold text-gray-600">
+            {monthTotal} {metric === 'xp' ? 'XP' : 'заданий'}
+          </p>
         </div>
-        <MonthChart month={month} />
+        <MonthChart month={month} metric={metric} />
         <div className="flex justify-between mt-1.5">
           <span className="text-[10px] text-gray-300">{month[0]?.date?.slice(5)}</span>
           <span className="text-[10px] text-gray-300">сегодня</span>

@@ -101,6 +101,7 @@ export const profileApi = {
   achievements: () => api.get('/profile/achievements'),
   activity: () => api.get('/profile/activity'),
   dashboard: () => api.get('/profile/dashboard'),
+  leaderboard: () => api.get('/profile/leaderboard'),
   weakSpots: () => api.get('/profile/weak-spots'),
   updateSettings: (data) => api.put('/profile/settings', data),
   getPreferences: () => api.get('/profile/content-preferences'),

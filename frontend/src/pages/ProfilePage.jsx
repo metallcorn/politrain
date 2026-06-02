@@ -6,6 +6,7 @@ import Card from '../components/ui/Card'
 import ProgressBar from '../components/ui/ProgressBar'
 import AchievementBadge from '../components/gamification/AchievementBadge'
 import ActivityDashboard from '../components/gamification/ActivityDashboard'
+import Leaderboard from '../components/gamification/Leaderboard'
 import Skeleton from '../components/ui/Skeleton'
 import Button from '../components/ui/Button'
 import { Zap, Flame, Target, LogOut, Settings, ShieldCheck, Clock } from 'lucide-react'
@@ -38,6 +39,7 @@ export default function ProfilePage() {
   const [profile, setProfile] = useState(null)
   const [achievements, setAchievements] = useState([])
   const [dashboardData, setDashboardData] = useState(null)
+  const [leaderboardData, setLeaderboardData] = useState(null)
   const [prefs, setPrefs] = useState(null)
   const [loading, setLoading] = useState(true)
   const [savingLang, setSavingLang] = useState(false)
@@ -46,18 +48,24 @@ export default function ProfilePage() {
   const [selectedThemes, setSelectedThemes] = useState([])
 
   useEffect(() => {
-    Promise.all([
+    Promise.allSettled([
       profileApi.get(),
       profileApi.achievements(),
       profileApi.dashboard(),
       profileApi.getPreferences(),
-    ]).then(([p, a, dash, pref]) => {
-      setProfile(p.data)
-      setAchievements(a.data)
-      setDashboardData(dash.data)
-      setPrefs(pref.data)
-      setSelectedLang(p.data.native_language || 'ru')
-      setSelectedThemes(pref.data.interest_themes || [])
+      profileApi.leaderboard(),
+    ]).then(([p, a, dash, pref, lb]) => {
+      if (p.status === 'fulfilled') {
+        setProfile(p.value.data)
+        setSelectedLang(p.value.data.native_language || 'ru')
+      }
+      if (a.status === 'fulfilled') setAchievements(a.value.data)
+      if (dash.status === 'fulfilled') setDashboardData(dash.value.data)
+      if (pref.status === 'fulfilled') {
+        setPrefs(pref.value.data)
+        setSelectedThemes(pref.value.data.interest_themes || [])
+      }
+      if (lb.status === 'fulfilled') setLeaderboardData(lb.value.data)
     }).finally(() => setLoading(false))
   }, [])
 
@@ -127,11 +135,9 @@ export default function ProfilePage() {
   const earnedAchievements = achievements.filter((a) => a.earned)
   const lockedAchievements = achievements.filter((a) => !a.earned)
 
-  const levelThresholds = [0, 200, 500, 1000, 2000, 4000, 8000, 15000]
-  const nextThreshold = levelThresholds[profile?.game_level] || 15000
-  const currentThreshold = levelThresholds[(profile?.game_level || 1) - 1] || 0
-  const xpInLevel = (profile?.xp || 0) - currentThreshold
-  const xpNeeded = nextThreshold - currentThreshold
+  const rankStart = profile?.xp_rank_start || 0
+  const xpInLevel = Math.max(0, (profile?.xp || 0) - rankStart)
+  const xpNeeded = xpInLevel + (profile?.xp_to_next_level || 1)
 
   const themesChanged = JSON.stringify(selectedThemes.slice().sort()) !==
     JSON.stringify((prefs?.interest_themes || []).slice().sort())
@@ -166,12 +172,16 @@ export default function ProfilePage() {
           <div className="flex items-center gap-2">
             <Zap size={18} className="text-yellow-500" />
             <span className="font-semibold text-gray-800">{profile?.game_level_name}</span>
-            <span className="text-sm text-gray-400">(уровень {profile?.game_level})</span>
+            <span className="text-sm text-gray-400">({profile?.game_level}/25)</span>
           </div>
           <span className="font-bold text-gray-700">{profile?.xp} XP</span>
         </div>
         <ProgressBar value={xpInLevel} max={xpNeeded} />
-        <p className="text-xs text-gray-400 mt-1">Ещё {profile?.xp_to_next_level} XP до следующего уровня</p>
+        <p className="text-xs text-gray-400 mt-1">
+          {profile?.xp_to_next_level > 0
+            ? `Ещё ${profile?.xp_to_next_level} XP до следующего ранга`
+            : 'Максимальный ранг достигнут!'}
+        </p>
       </Card>
 
       {/* Streak */}
@@ -237,6 +247,9 @@ export default function ProfilePage() {
           <ActivityDashboard data={dashboardData} />
         )}
       </div>
+
+      {/* Leaderboard */}
+      {leaderboardData && <Leaderboard data={leaderboardData} />}
 
       {/* Achievements */}
       {achievements.length > 0 && (

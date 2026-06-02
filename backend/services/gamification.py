@@ -4,37 +4,58 @@ import models
 
 XP_CORRECT = 10
 XP_INCORRECT = 2
+XP_VOCAB = 5        # SRS vocab flashcards (reduced — easier than exercises)
 XP_COMPLETE_TOPIC = 50
 XP_COMPLETE_SESSION = 30
 XP_CHAT_MESSAGE = 5
 
-GAME_LEVELS = [
-    (0, "Новичок"),
-    (200, "Ученик"),
-    (500, "Студент"),
-    (1000, "Знаток"),
-    (2000, "Полиглот"),
-    (4000, "Мастер"),
-    (8000, "Эксперт"),
-    (15000, "Легенда"),
+# 25 XP-ranks — designed for years of play (~300-500 XP/day at consistent pace)
+XP_RANKS = [
+    (0,      "Новичок I"),
+    (200,    "Новичок II"),
+    (500,    "Новичок III"),
+    (900,    "Ученик I"),
+    (1400,   "Ученик II"),
+    (2000,   "Ученик III"),
+    (2800,   "Ученик IV"),
+    (3800,   "Практикант I"),
+    (5000,   "Практикант II"),
+    (6500,   "Практикант III"),
+    (8500,   "Практикант IV"),
+    (11000,  "Знаток I"),
+    (14000,  "Знаток II"),
+    (18000,  "Знаток III"),
+    (23000,  "Знаток IV"),
+    (29000,  "Мастер I"),
+    (36000,  "Мастер II"),
+    (44000,  "Мастер III"),
+    (53000,  "Мастер IV"),
+    (63000,  "Мастер V"),
+    (74000,  "Эксперт I"),
+    (86000,  "Эксперт II"),
+    (99000,  "Эксперт III"),
+    (113000, "Эксперт IV"),
+    (128000, "Эксперт V"),
 ]
 
 
-def get_game_level(xp: int) -> tuple[int, str, int]:
-    level = 1
-    level_name = GAME_LEVELS[0][1]
-    xp_to_next = GAME_LEVELS[1][0]
+def get_game_level(xp: int) -> tuple[int, str, int, int]:
+    rank_num = 1
+    rank_name = XP_RANKS[0][1]
+    rank_start = XP_RANKS[0][0]
+    xp_to_next = XP_RANKS[1][0]
 
-    for i, (threshold, name) in enumerate(GAME_LEVELS):
+    for i, (threshold, name) in enumerate(XP_RANKS):
         if xp >= threshold:
-            level = i + 1
-            level_name = name
-            if i + 1 < len(GAME_LEVELS):
-                xp_to_next = GAME_LEVELS[i + 1][0] - xp
+            rank_num = i + 1
+            rank_name = name
+            rank_start = threshold
+            if i + 1 < len(XP_RANKS):
+                xp_to_next = XP_RANKS[i + 1][0] - xp
             else:
                 xp_to_next = 0
 
-    return level, level_name, max(0, xp_to_next)
+    return rank_num, rank_name, max(0, xp_to_next), rank_start
 
 
 def add_xp(user: models.User, db: Session, amount: int) -> int:
@@ -56,6 +77,11 @@ def update_streak(user: models.User, db: Session) -> int:
         user.xp += streak_bonus
     elif user.last_activity is None or user.last_activity < yesterday:
         user.streak_days = 1
+
+    # Track personal best streak
+    best = getattr(user, 'best_streak', None) or 0
+    if user.streak_days > best:
+        user.best_streak = user.streak_days
 
     user.last_activity = today
     db.add(user)

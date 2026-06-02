@@ -230,6 +230,38 @@ print('streak:', d['totals']['streak_days'], '| xp:', d['totals']['xp'])
 # Проверяем: все поля присутствуют, числа >= 0
 ```
 
+### 18. Ранги, серия, таблица лидеров
+```bash
+# Профиль — ранг из 25, best_streak, xp_rank_start
+curl -s "http://localhost:8000/api/v1/profile" -H "Authorization: Bearer $TOKEN" | \
+  python3 -c "
+import sys,json; d=json.load(sys.stdin)
+print('rank:', d['game_level_name'], f'({d[\"game_level\"]}/25)')
+print('xp:', d['xp'], '| xp_rank_start:', d['xp_rank_start'], '| xp_to_next:', d['xp_to_next_level'])
+print('streak:', d['streak_days'], '| best_streak:', d['best_streak'])
+"
+# Проверяем: game_level 1-25, xp_rank_start < xp, best_streak >= streak_days
+
+# Таблица лидеров
+curl -s "http://localhost:8000/api/v1/profile/leaderboard" -H "Authorization: Bearer $TOKEN" | \
+  python3 -c "
+import sys,json; d=json.load(sys.stdin)
+print('my_rank:', d['my_rank'], '| total_users:', d['total_users'])
+for e in d['entries']: print(f'  #{e[\"rank\"]} {e[\"username\"]} — {e[\"xp_today\"]} XP{\" <-- ты\" if e[\"is_current_user\"] else \"\"}')
+"
+# Проверяем: my_rank >= 1, entries отсортированы по xp_today desc, is_current_user у одной записи
+
+# Dashboard — xp_today + xp в week/month
+curl -s "http://localhost:8000/api/v1/profile/dashboard" -H "Authorization: Bearer $TOKEN" | \
+  python3 -c "
+import sys,json; d=json.load(sys.stdin)
+print('xp_today:', d['today']['xp_today'])
+print('best_streak:', d['totals']['best_streak'])
+print('week xp sample:', [(x['day'],x.get('xp',0)) for x in d['week'][:3]])
+"
+# Проверяем: xp_today > 0 если занимался, week/month содержат поле xp
+```
+
 ### 17. Пул упражнений (только ADMIN)
 ```bash
 curl -s "http://localhost:8000/api/v1/admin/exercise-pool/stats" -H "Authorization: Bearer $TOKEN" | \
@@ -417,16 +449,21 @@ backend/
     profile.py     — профиль, настройки, достижения, активность;
                      GET /profile/dashboard — дашборд активности: today (done/correct/minutes/goal),
                        week (7 дней из DailyActivity), month (30 дней), by_source (bucketed %),
-                       totals (streak_days, xp, total_time_seconds)
+                       totals (streak_days, best_streak, xp, total_time_seconds);
+                     GET /profile/leaderboard — таблица лидеров: ±5 пользователей по xp_today, my_rank, total_users
     chat.py        — чат с AI собеседником
   services/
     mistral.py     — обёртка над Mistral API
-    gamification.py — XP, стрики, достижения
+    gamification.py — XP, стрики, достижения;
+                       XP_RANKS — 25 рангов (Новичок I→Эксперт V, 0→128000 XP);
+                       XP_CORRECT=10, XP_INCORRECT=2, XP_VOCAB=5 (SRS-карточки), vocab source="vocab" → 0 XP;
+                       `get_game_level(xp)` → (rank_num, name, xp_to_next, rank_start) — 4 значения;
+                       `update_streak()` обновляет streak_days и best_streak
     sm2.py         — алгоритм интервального повторения (SRS)
 ```
 
 ### Ключевые модели
-- `User` — пользователь, level (A0-B1), xp, streak_days, `total_training_seconds`
+- `User` — пользователь, level (A0-B1), xp, streak_days, `best_streak`, `total_training_seconds`
 - `DailyExercise` — задания дня, source:
   - `weak` — curriculum упражнения из слабых тем
   - `new` — AI-сгенерированные новые задания; ВСЕ упражнения имеют topic_slug+topic_title в content (grammar — через статью, остальные — Python round-robin)
@@ -502,7 +539,9 @@ frontend/src/
     training/      — FillBlank, MultipleChoice, Flashcard, WordOrder, JudgeSentence, TranslatePhrase, LetterTilesBlank, WordDefinition
     ui/            — Button, Card, Input, ProgressBar, Skeleton (animate-pulse заглушки), Markdown (react-markdown wrapper)
     layout/        — Layout с min-w-0 на flex контейнере (важно для mobile); page transitions через key={location.pathname}
-    gamification/  — ActivityDashboard: Ring (SVG кольцо цели), WeekChart (7 дней), MonthChart (30 дней), SourceBar (breakdown по источникам)
+    gamification/  — ActivityDashboard: Ring (SVG кольцо цели), WeekChart (7 дней), MonthChart (30 дней), SourceBar (breakdown по источникам);
+                       переключатель metric (exercises/XP) для Week и Month графиков; best_streak в chip серии;
+                       Leaderboard — таблица лидеров по XP за сегодня, my_rank highlighted
     admin/         — MistralUsageChart: period selector 7/30/90 дней, stat cards, DayChart (stacked large/small), by-purpose bars, by-user table
 ```
 
@@ -593,3 +632,6 @@ frontend/src/
 | mistral_call_logs.created_at = NULL | SQLAlchemy `default=func.now()` не работает для raw sqlite3 INSERT | Явно передавать `datetime('now')` в INSERT в `_log_call()` |
 | AdminPage не рендерит новую вкладку | ternary chain `): (` нельзя расширить добавив ещё одну ветку | Исп. `tab === 'X' ? ... : tab === 'Y' ? ... : tab === 'Z' ? ...` — явные условия для каждой вкладки |
 | topic_title не видно в badge бонуса | Старые упражнения в БД без topic_title | Удалить uncompleted bonus: `DELETE FROM daily_exercises WHERE source='bonus' AND is_completed=0 AND date=date('now')` |
+| `get_game_level` возвращает 4 значения | Возвращает `(rank_num, name, xp_to_next, rank_start)` — 4-tuple | Распаковывать как `level, name, xp_to_next, rank_start = get_game_level(xp)` |
+| Лидерборд пуст если никто не занимался | Запрос фильтрует `xp_earned > 0`, текущий пользователь всегда включается | Если xp=0 у всех — entries=[current_user], total_users=1 |
+| vocab source XP | source='vocab' (know/don't know) → 0 XP; flashcard с vocab_id → XP_VOCAB=5; обычные упражнения → XP_CORRECT=10 | `_vocab_mode` устанавливается в answer handler до XP-блока |

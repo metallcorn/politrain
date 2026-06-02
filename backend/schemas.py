@@ -245,9 +245,11 @@ class ProfileResponse(BaseModel):
     level: str
     xp: int
     streak_days: int
+    best_streak: int = 0
     game_level: int
     game_level_name: str
     xp_to_next_level: int
+    xp_rank_start: int = 0
     progress_to_b1: float
     total_exercises: int
     total_chat_messages: int

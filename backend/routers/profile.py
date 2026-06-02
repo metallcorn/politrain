@@ -19,7 +19,7 @@ def get_profile(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    level, level_name, xp_to_next = get_game_level(current_user.xp)
+    level, level_name, xp_to_next, rank_start = get_game_level(current_user.xp)
     b1_progress = calculate_b1_progress(current_user.id, db)
 
     curriculum_exercises = db.query(models.UserExerciseHistory).filter(
@@ -65,9 +65,11 @@ def get_profile(
         level=current_user.level,
         xp=current_user.xp,
         streak_days=current_user.streak_days,
+        best_streak=getattr(current_user, 'best_streak', None) or 0,
         game_level=level,
         game_level_name=level_name,
         xp_to_next_level=xp_to_next,
+        xp_rank_start=rank_start,
         progress_to_b1=b1_progress,
         total_exercises=total_exercises,
         total_chat_messages=total_chat,
@@ -175,6 +177,7 @@ def get_dashboard(
             "date": d.isoformat(),
             "day": day_names[d.weekday()],
             "exercises": r.exercises_done if r else 0,
+            "xp": r.xp_earned if r else 0,
             "minutes": r.minutes_spent if r else 0,
             "is_today": d == today,
         })
@@ -193,6 +196,7 @@ def get_dashboard(
         month.append({
             "date": d.isoformat(),
             "exercises": r.exercises_done if r else 0,
+            "xp": r.xp_earned if r else 0,
         })
 
     # --- source breakdown (last 30 days) ---
@@ -235,15 +239,66 @@ def get_dashboard(
             "correct": today_correct,
             "minutes": today_minutes,
             "goal": today_goal,
+            "xp_today": today_act.xp_earned if today_act else 0,
         },
         "week": week,
         "month": month,
         "by_source": by_source,
         "totals": {
             "streak_days": current_user.streak_days,
+            "best_streak": getattr(current_user, 'best_streak', None) or 0,
             "xp": current_user.xp,
             "total_time_seconds": current_user.total_training_seconds or 0,
         },
+    }
+
+
+@router.get("/leaderboard")
+def get_leaderboard(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    today = date.today()
+
+    # Today's XP for users who practiced (xp_earned > 0)
+    activity_rows = db.query(
+        models.DailyActivity.user_id,
+        models.DailyActivity.xp_earned,
+    ).filter(
+        models.DailyActivity.date == today,
+        models.DailyActivity.xp_earned > 0,
+    ).all()
+
+    scores = {row.user_id: row.xp_earned for row in activity_rows}
+    # Always include current user even if 0 XP today
+    if current_user.id not in scores:
+        scores[current_user.id] = 0
+
+    user_rows = db.query(models.User.id, models.User.username).filter(
+        models.User.id.in_(scores.keys())
+    ).all()
+    user_map = {u.id: u.username for u in user_rows}
+
+    sorted_ids = sorted(scores.keys(), key=lambda uid: (-scores[uid], uid))
+    my_rank = sorted_ids.index(current_user.id) + 1
+
+    window_start = max(0, my_rank - 1 - 5)
+    window_end = min(len(sorted_ids), my_rank - 1 + 6)
+
+    entries = [
+        {
+            "rank": i + 1 + window_start,
+            "username": user_map.get(uid, "?"),
+            "xp_today": scores[uid],
+            "is_current_user": uid == current_user.id,
+        }
+        for i, uid in enumerate(sorted_ids[window_start:window_end])
+    ]
+
+    return {
+        "entries": entries,
+        "my_rank": my_rank,
+        "total_users": len(sorted_ids),
     }
 
 

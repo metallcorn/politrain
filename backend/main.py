@@ -35,6 +35,8 @@ def _migrate():
             "ALTER TABLE daily_exercises ADD COLUMN pool_exercise_id INTEGER REFERENCES exercise_pool(id)",
             "CREATE INDEX IF NOT EXISTS idx_de_pool_user ON daily_exercises(pool_exercise_id, user_id)",
             "ALTER TABLE generated_exercise_reports ADD COLUMN daily_exercise_id INTEGER REFERENCES daily_exercises(id)",
+            "ALTER TABLE users ADD COLUMN best_streak INTEGER DEFAULT 0",
+            "UPDATE users SET best_streak = streak_days WHERE best_streak = 0 AND streak_days > 0",
         ]:
             try:
                 conn.execute(__import__('sqlalchemy').text(sql))
