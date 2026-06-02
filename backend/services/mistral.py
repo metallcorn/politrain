@@ -60,10 +60,18 @@ async def chat_completion(
                 data = response.json()
                 duration_ms = int((time.monotonic() - t0) * 1000)
                 usage = data.get("usage", {})
+                choice = data["choices"][0]
+                finish_reason = choice.get("finish_reason")
+                content = choice["message"]["content"]
+                if finish_reason == "content_filter" or (
+                    isinstance(content, str) and "blocked by content filtering" in content.lower()
+                ):
+                    _log_call(used_model, purpose, user_id, 0, 0, False, duration_ms)
+                    raise RuntimeError("content_filter")
                 _log_call(used_model, purpose, user_id,
                           usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0),
                           True, duration_ms)
-                return data["choices"][0]["message"]["content"]
+                return content
             except httpx.TimeoutException:
                 _log_call(used_model, purpose, user_id, 0, 0, False,
                           int((time.monotonic() - t0) * 1000))

@@ -64,6 +64,11 @@ SECRET=$(grep SECRET_KEY /home/politrain/politrain_code/.env | cut -d= -f2) ; TO
 ```
 
 **Правило**: максимум ОДИН рестарт и ОДИН прогон теста за задачу. Все правки делать ДО рестарта.
+Если тест прошёл успешно — сразу делать git коммит:
+```bash
+git -C /home/politrain/politrain_code add -A && git -C /home/politrain/politrain_code commit -m "описание изменений"
+```
+После коммита — попросить пользователя запустить `! git -C /home/politrain/politrain_code push origin main` или сделать push самостоятельно.
 
 ## Тестовые сценарии после изменений
 
