@@ -13,7 +13,7 @@ AI-тренажёр польского языка. FastAPI + SQLite бэкенд
 
 - **Backend**: FastAPI, SQLAlchemy, SQLite (`backend/politrain.db`), Pydantic v2
 - **Frontend**: React 18, Vite, Tailwind CSS, Zustand, Axios (`baseURL: '/api/v1'`)
-- **AI**: Mistral API — `mistral-large-latest` для генерации упражнений (5 параллельных батчей, timeout=60с, fallback → small), `mistral-small-latest` только для словаря; каждый вызов логируется в `mistral_call_logs` с токенами и duration
+- **AI**: Mistral API — `mistral-large-latest` для генерации упражнений (до 7 параллельных батчей: N grammar per-topic + N lexical per-topic + 3 глобальных judge/tiles/word_def, timeout=60с, fallback → small), `mistral-small-latest` только для словаря; каждый вызов логируется в `mistral_call_logs` с токенами и duration
 - **PWA**: `vite-plugin-pwa` + Workbox service worker; иконки из `public/icon.svg` через `@vite-pwa/assets-generator`; HTTPS на `politrain.metallcorn.online` (Let's Encrypt); autoUpdate режим
 - **Деплой**: nginx reverse proxy (`proxy_read_timeout 90s` — обязательно!), uvicorn, systemd (сервис не настроен — запускается вручную)
 
@@ -310,7 +310,8 @@ print(f'Total: {len(exs)}, with topic tag: {len(tagged)}')
 for e in tagged[:5]:
     print(f'  [{e[\"type\"]}] {e[\"topic_title\"]} | {e.get(\"question\",\"\")[:50]}')
 "
-# Проверяем: ВСЕ упражнения имеют topic_title (все типы — fill_blank, flashcard, judge, letter_tiles, word_def)
+# Проверяем: grammar (fill_blank, multiple_choice) и lexical (flashcard, translate, order_words) имеют topic_title
+# judge_sentence, letter_tiles, word_definition — глобальные батчи, темы не присваиваются (intentional)
 # Проверить в БД: SELECT topic_id, COUNT(*) FROM daily_exercises WHERE source='bonus' AND date=date('now') GROUP BY topic_id
 ```
 
@@ -423,10 +424,13 @@ backend/
                        приоритет: (level_idx, score_asc) — нижний уровень + низкий прогресс первыми;
                        когда ≥60% A0..current_level done → подмешивает 1 тему следующего уровня;
                        7-дневная ротация: исключает темы недавно покрытые в new/bonus, fallback на recent,
-                     _save_to_pool(item, level, topic_id, db) — сохраняет упражнение в ExercisePool; UNIQUE по question_norm; возвращает pool_id,
+                     _save_to_pool(item, level, topic_id, db) — сохраняет упражнение в ExercisePool; UNIQUE по question_norm; возвращает pool_id;
+                       если запись уже есть без topic_id → обновляет topic_id и topic_title в content (ретроактивная тегировка),
                      _pool_draw(db, user_id, level, count) — берёт из пула упражнения не виденные пользователем (NOT IN subquery на pool_exercise_id),
                      _generate_daily_pool, _generate_bonus_pool — пул-приоритет: сначала _pool_draw, затем Mistral только для дефицита;
-                       новые упражнения сохраняются в пул через _save_to_pool; bonus использует challenge_level = _next_level(user.level),
+                       ВСЕ валидированные упражнения сохраняются в пул (не только deficit штук) — пул пополняется максимально;
+                       в DailyExercise идут только первые deficit упражнений из сгенерированных;
+                       bonus использует challenge_level = _next_level(user.level),
                        вызывают _select_topics_for_generation, передают topics в _generate_exercises, сохраняют topic_id в DailyExercise,
                      _generate_topic_exercises_for_daily — 2 слабые темы × 2 задания, source='topic_d', параллельно с основным пулом,
                      _generate_topic_pool — fill_blank+mc строго по теме с текстом статьи,
@@ -464,8 +468,8 @@ backend/
 - `User` — пользователь, level (A0-B1), xp, streak_days, `best_streak`, `total_training_seconds`
 - `DailyExercise` — задания дня, source:
   - `weak` — curriculum упражнения из слабых тем
-  - `new` — AI-сгенерированные новые задания; ВСЕ упражнения имеют topic_slug+topic_title в content (grammar — через статью, остальные — Python round-robin)
-  - `bonus` — AI-сгенерированные бонусные задания (сверх дневной нормы); аналогично все упражнения тегированы темой
+  - `new` — AI-сгенерированные новые задания; grammar (fill_blank/mc) и lexical (flashcard/translate/order_words) имеют topic_slug+topic_title в content — тема соответствует содержимому батча; judge/letter_tiles/word_def — глобальные без темы
+  - `bonus` — AI-сгенерированные бонусные задания (сверх дневной нормы); аналогично grammar+lexical тегированы, judge/tiles/word_def без темы
   - `review` — словарные карточки из UserVocabulary по SRS-расписанию + 2 новых слова в день
   - `review_ai` — AI-задания на повторение по SRS (из new/bonus с истёкшим next_review)
   - `vocab` — карточки из режима "Слова" (не входят в daily_done счётчик)
@@ -478,7 +482,7 @@ backend/
 - `UserTopicProgress` — прогресс по темам; обновляется при ответе на topic/topic_d/new/bonus если topic_id заполнен;
   для new/bonus: min 3 ответа до статуса "done" (score≥0.6 + attempts≥3); запись создаётся автоматически если не существует
 - `ExercisePool` — общий пул AI-упражнений для всех пользователей: exercise_type, level, topic_id, content (JSON), question_norm (UNIQUE), is_active, report_count, use_count
-  - Источник: `_save_to_pool()` вызывается после валидации каждого сгенерированного упражнения
+  - Источник: `_save_to_pool()` вызывается для ВСЕХ валидированных упражнений (не только тех что пошли в DailyExercise)
   - Раздача: `_pool_draw(user_id, level, count)` — берёт несмотренные пользователем упражнения (NOT IN по pool_exercise_id из daily_exercises)
   - Жалоба → `report_count += 1`; при `report_count >= 2` → `is_active=False` → никто больше не видит
   - `DailyExercise.pool_exercise_id` — FK на ExercisePool; ставится при раздаче ИЗ пула и при сохранении В пул
@@ -565,7 +569,7 @@ frontend/src/
 - TopicDetailPage: skeleton вместо Spinner при загрузке; `last_result` из get_lesson предзаполняет exerciseResults; после ответа exerciseResults[ex.id] обновляется локально
 - TrainingPage: режим "Повторение" (mode=practice) — только упражнения с is_correct=True (AI: new/bonus/review_ai/topic_d за 60 дней + curriculum не освоенные но последний ответ верный); ошибки (is_correct=False) остаются ТОЛЬКО в errors mode; без лимита в день; не считается в today_done
 - SessionResult кнопка "продолжить" для practice: "Ещё задания" (mode=bonus)
-- TrainingSessionPage: source badge показывает тему если `currentEx.topic_title` есть: "✨ Новое · Biernik"; тема берётся из content JSON (topic_title поле)
+- TrainingSessionPage: source badge показывает тему для fill_blank/multiple_choice если `currentEx.topic_title` есть: "✨ Новое · Biernik"; ограничено этими типами чтобы старые pool-упражнения без темы не показывали устаревший round-robin тег
 - multiple_choice options перемешиваются при каждой отдаче сессии (random.shuffle прямо перед return), чтобы пользователь не запоминал позиции
 - ProfilePage: ActivityDashboard вместо ActivityHeatmap; данные из `profileApi.dashboard()` (GET /profile/dashboard); skeleton при загрузке
 - AdminPage: вкладка "API" с MistralUsageChart; вкладки — ternary цепочка (`tab === 'X' ? ... : tab === 'Y' ? ...`), НЕ if/else
@@ -594,8 +598,8 @@ frontend/src/
 | judge_sentence с ___ | Мистраль иногда генерит fill_blank-образные judge | `_fix_judge_sentence_exercise` отбрасывает если в question есть ___ |
 | mode=new таймаут/ошибка | Всегда вызывал генерацию даже если bonus уже есть | Проверять uncompleted_bonus перед `_generate_bonus_pool`, как mode=bonus |
 | Повторяющиеся упражнения | Мистраль генерирует похожие вопросы каждый раз | `_seen_questions()` — Python-дедупликация последних 60 выполненных, не засорять промт |
-| Мега-промт = плохое качество | Один промт на много типов — Мистраль путается | 5 параллельных батчей: grammar / lexical / judge / letter_tiles / word_definition через asyncio.gather |
-| daily_pool таймаут | mistral-large не укладывается в 25с для генерации упражнений | 5 параллельных батчей по ~3-4 упражнения, каждый timeout=60с, fallback на mistral-small |
+| Мега-промт = плохое качество | Один промт на много типов — Мистраль путается | До 7 параллельных батчей: N grammar per-topic + N lexical per-topic + judge + letter_tiles + word_definition через asyncio.gather |
+| daily_pool таймаут | mistral-large не укладывается в 25с для генерации упражнений | До 7 параллельных батчей по 2-3 упражнения, каждый timeout=60с, fallback на mistral-small |
 | nginx обрывает соединение | proxy_read_timeout по умолчанию 60с, Mistral генерирует до 63с | proxy_read_timeout 90s в /etc/nginx/sites-available/default (требует root) |
 | Таблица в статье не рендерится | Кастомный parseTable требует непустой заголовок | Всегда писать осмысленные названия колонок в первой строке таблицы |
 | Бэкенд не видит изменения | Не перезапущен после правки | Всегда kill + restart |
@@ -635,3 +639,5 @@ frontend/src/
 | vocab source XP | source='vocab' (know/don't know) → 0 XP; flashcard с vocab_id → XP_VOCAB=5; обычные упражнения → XP_CORRECT=10 | `_vocab_mode` устанавливается в answer handler до XP-блока |
 | Тема не соответствует упражнению | Round-robin topic assignment → flashcard про garnitur помечен "Алфавит" | _batch_for_topic_lexical() — отдельный батч per-topic для flashcard/translate/order_words; judge/tiles/word_def глобальны без тем |
 | topic_d без названия темы в бейдже | topic_title не добавлялся в content JSON | _gen_for_topic() добавляет item["topic_title"] перед сохранением |
+| Пул не пополняется при малом дефиците | Цикл в _generate_bonus/daily_pool прерывался после deficit упражнений — остальные выбрасывались | Двухпроходный цикл: сначала сохранить ВСЕ в пул, затем взять первые deficit в DailyExercise |
+| Lexical упражнения в пуле без topic_id | Сгенерированы old кодом (global batch + round-robin) до добавления _batch_for_topic_lexical | Деактивировать через is_active=0; пул сам пополнится новыми topically-tagged упражнениями при следующей генерации |
