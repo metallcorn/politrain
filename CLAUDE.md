@@ -612,7 +612,7 @@ frontend/src/
 | order_words заканчивается предлогом | Мистраль генерит "Idę / do / szkoły" где ответ кончается "do" | `_fix_order_words_exercise` отбрасывает если последнее слово в `_PL_CLAUSE_ENDS`; также требует ≥ 3 слов |
 | vocab сессия только из повторений | Нет баланса new/review | Ограничение: max 60% review-слов, min 30% новых слов в vocab сессии |
 | judge_sentence без перевода | Пользователь не понимает предложение без контекста | `translation` — обязательное поле в JUDGE_EXERCISES_PROMPT; показывается как хинт до ответа (-1 XP) |
-| Таймер сессии считает время в другой вкладке | `Date.now()` не учитывал переключения | `visibilitychange` event → `activeTimeRef.current` накапливает только активное время |
+| Таймер сессии считает время в другой вкладке или приложении | `visibilitychange` не срабатывает при переключении приложений на десктопе (браузер остаётся открытым) | `visibilitychange` + `window.blur`/`window.focus` — оба события вызывают одну `pause()`/`resume()` функцию |
 | Мистраль пишет translation по-английски | Игнорирует `{native_language}` в промте | `_sanitize_native_fields(item, native_language)` — зануляет translation/explanation/hint без кириллицы у ru-пользователей; вызывается при сохранении new/bonus/topic |
 | word_definition раскрывает ответ через производное | "apteka" → вопрос содержит "aptekarz" | `_fix_word_definition_exercise`: stem check — если `c_norm[:-1]` (все кроме последней буквы) есть в вопросе → None; плюс правило Alias в промте |
 | TrainingPage: бонус исчезает | `dailyDone=false` когда today_total=0 | Бонус всегда виден, disabled (div вместо Link) пока дневная не выполнена |
