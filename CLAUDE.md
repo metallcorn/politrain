@@ -40,6 +40,7 @@ kill $(ps aux | grep uvicorn | grep -v grep | awk '{print $2}') 2>/dev/null ; sl
 cd /home/politrain/politrain_code/frontend && npm run build
 ```
 Dist отдаётся nginx из `frontend/dist/`.
+**ВАЖНО**: всегда явный `cd frontend` в той же команде — если CWD = backend/, build запустится из неправильной директории и dist не обновится (nginx продолжит раздавать старый файл без ошибок).
 
 ### JWT-токен для тестирования API
 ```bash
