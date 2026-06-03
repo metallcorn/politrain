@@ -10,7 +10,6 @@ export default function SessionResult({ correct, total, xpEarned, streak, mode, 
 
   const [rating, setRating] = useState(0)
   const [hoverRating, setHoverRating] = useState(0)
-  const [commentOpen, setCommentOpen] = useState(false)
   const [comment, setComment] = useState('')
   const [ratingSubmitted, setRatingSubmitted] = useState(false)
   const autoSubmitTimer = useRef(null)
@@ -35,19 +34,19 @@ export default function SessionResult({ correct, total, xpEarned, streak, mode, 
 
   const handleStarClick = (stars) => {
     setRating(stars)
-    // Auto-submit after 2s — cancelled if user opens comment box first
+    // Auto-submit after 10s — cancelled if user starts typing a comment
     clearTimeout(autoSubmitTimer.current)
-    autoSubmitTimer.current = setTimeout(() => submitRating(stars, ''), 2000)
+    autoSubmitTimer.current = setTimeout(() => submitRating(stars, ''), 10000)
   }
 
-  const handleCommentOpen = () => {
-    clearTimeout(autoSubmitTimer.current)
-    setCommentOpen(true)
+  const handleCommentChange = (e) => {
+    setComment(e.target.value)
+    clearTimeout(autoSubmitTimer.current) // typing cancels auto-submit
   }
 
   const handleCommentSubmit = () => {
+    clearTimeout(autoSubmitTimer.current)
     submitRating(rating, comment)
-    setCommentOpen(false)
   }
 
   const formatDuration = (seconds) => {
@@ -128,21 +127,13 @@ export default function SessionResult({ correct, total, xpEarned, streak, mode, 
             </button>
           ))}
         </div>
-        {rating > 0 && !commentOpen && !ratingSubmitted && (
-          <button
-            onClick={handleCommentOpen}
-            className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
-          >
-            + оставить комментарий
-          </button>
-        )}
-        {commentOpen && (
+        {rating > 0 && !ratingSubmitted && (
           <div className="w-full flex flex-col gap-2 animate-fade-in">
             <textarea
               className="input resize-none h-16 text-sm"
-              placeholder="Что понравилось или не понравилось?"
+              placeholder="Комментарий (необязательно)..."
               value={comment}
-              onChange={(e) => setComment(e.target.value)}
+              onChange={handleCommentChange}
               autoFocus
             />
             <button
@@ -153,7 +144,7 @@ export default function SessionResult({ correct, total, xpEarned, streak, mode, 
             </button>
           </div>
         )}
-        {ratingSubmitted && !commentOpen && rating > 0 && (
+        {ratingSubmitted && (
           <p className="text-xs text-gray-400 animate-fade-in">Спасибо за оценку!</p>
         )}
       </div>

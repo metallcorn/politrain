@@ -21,6 +21,12 @@ function isClose(userInput, expected) {
   })
 }
 
+const VOCAB_STATUS_LABELS = {
+  error: { text: 'Ошибка', cls: 'bg-red-100 text-red-600' },
+  review: { text: 'Повторение', cls: 'bg-blue-100 text-blue-600' },
+  new: { text: 'Новое слово', cls: 'bg-green-100 text-green-700' },
+}
+
 // Vocab cards: type-and-check with fuzzy matching
 function VocabCard({ exercise, onAnswer, result, loading }) {
   const reverse = useMemo(
@@ -61,8 +67,15 @@ function VocabCard({ exercise, onAnswer, result, loading }) {
     if (e.key === 'Enter' && !checked && !loading) handleSubmit()
   }
 
+  const statusLabel = exercise.vocab_status ? VOCAB_STATUS_LABELS[exercise.vocab_status] : null
+
   return (
     <div className="flex flex-col items-center gap-6">
+      {statusLabel && (
+        <span className={`text-xs font-medium px-2.5 py-0.5 rounded-full ${statusLabel.cls}`}>
+          {statusLabel.text}
+        </span>
+      )}
       <div
         className="w-full bg-white rounded-2xl border-2 border-primary-100 flex flex-col items-center justify-center p-8"
         style={{ minHeight: 180 }}

@@ -161,6 +161,15 @@ def get_dashboard(
     sl = prefs.session_length if prefs else "standard"
     today_goal = {"short": 10, "standard": 20, "long": 25}.get(sl, 20)
 
+    # Cap goal at actual daily exercises created (user can't score higher than what was generated)
+    daily_total_created = db.query(func.count(models.DailyExercise.id)).filter(
+        models.DailyExercise.user_id == current_user.id,
+        models.DailyExercise.date == today,
+        models.DailyExercise.source.notin_(["bonus", "vocab", "practice"]),
+    ).scalar() or 0
+    if daily_total_created > 0:
+        today_goal = min(today_goal, daily_total_created)
+
     # --- week (last 7 days) ---
     week_start = today - timedelta(days=6)
     week_rows = db.query(models.DailyActivity).filter(

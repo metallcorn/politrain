@@ -744,10 +744,28 @@ async def get_training_session(
                 ).all()
             }
             seen_ids = set(all_uvs.keys())
-            wrong_ids = {vid for vid, uv in all_uvs.items() if uv.correct_streak == 0}
+
+            # Exclude words correctly answered in today's vocab sessions (avoid same-day repeats)
+            correctly_done_today = set()
+            for de in db.query(models.DailyExercise).filter(
+                models.DailyExercise.user_id == current_user.id,
+                models.DailyExercise.date == today,
+                models.DailyExercise.source == "vocab",
+                models.DailyExercise.is_correct == True,
+            ).all():
+                try:
+                    c = json.loads(de.content)
+                    if c.get("vocab_id"):
+                        correctly_done_today.add(c["vocab_id"])
+                except Exception:
+                    pass
+
+            wrong_ids = {vid for vid, uv in all_uvs.items()
+                         if uv.correct_streak == 0 and vid not in correctly_done_today}
             due_ids = {
                 vid for vid, uv in all_uvs.items()
                 if uv.correct_streak >= 1 and uv.next_review and uv.next_review <= today
+                and vid not in correctly_done_today
             }
 
             # If new words at eligible levels are running low, generate more before building session
@@ -759,29 +777,38 @@ async def get_training_session(
                 await _ensure_vocab_pool(current_user, db)
 
             vocab_to_show = []
+            vocab_status = {}  # vocab_id → "error" | "review" | "new"
 
             # Cap reviews at 60% of session, always leave at least 30% for new words
             max_review_slots = int(count * 0.6)
             min_new_slots = max(1, int(count * 0.3))
 
             if wrong_ids:
-                vocab_to_show += db.query(models.Vocabulary).filter(
+                wrong_words = db.query(models.Vocabulary).filter(
                     models.Vocabulary.id.in_(wrong_ids),
                     models.Vocabulary.level.in_(eligible_levels),
                 ).limit(min(len(wrong_ids), max_review_slots // 2 + 1)).all()
+                for w in wrong_words:
+                    vocab_status[w.id] = "error"
+                vocab_to_show += wrong_words
 
             review_slots_left = max_review_slots - len(vocab_to_show)
             if review_slots_left > 0 and due_ids:
-                vocab_to_show += db.query(models.Vocabulary).filter(
+                review_words = db.query(models.Vocabulary).filter(
                     models.Vocabulary.id.in_(due_ids),
                     models.Vocabulary.level.in_(eligible_levels),
                 ).limit(review_slots_left).all()
+                for w in review_words:
+                    vocab_status[w.id] = "review"
+                vocab_to_show += review_words
 
             new_slots = max(min_new_slots, count - len(vocab_to_show))
             new_words = db.query(models.Vocabulary).filter(
                 models.Vocabulary.level.in_(eligible_levels),
                 models.Vocabulary.id.notin_(seen_ids) if seen_ids else True,
             ).limit(new_slots).all()
+            for w in new_words:
+                vocab_status[w.id] = "new"
             vocab_to_show += new_words
 
             if not vocab_to_show:
@@ -795,6 +822,7 @@ async def get_training_session(
                     "translation": getattr(v, f"translation_{current_user.native_language}", v.translation_en),
                     "example_sentence": v.example_sentence,
                     "vocab_id": v.id,
+                    "vocab_status": vocab_status.get(v.id, "new"),
                 }
                 de = models.DailyExercise(
                     user_id=current_user.id,
