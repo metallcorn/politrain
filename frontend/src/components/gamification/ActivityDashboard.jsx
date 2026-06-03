@@ -162,9 +162,9 @@ export default function ActivityDashboard({ data }) {
         <div className="card text-center py-3">
           <div className="flex items-center justify-center gap-1 mb-0.5">
             <Trophy size={14} className="text-amber-500" />
-            <span className="font-bold text-gray-900">{today.xp_today || 0}</span>
+            <span className="font-bold text-gray-900">{today.exercises || 0}</span>
           </div>
-          <p className="text-[11px] text-gray-400">XP сегодня</p>
+          <p className="text-[11px] text-gray-400">заданий сегодня</p>
         </div>
       </div>
 
@@ -172,14 +172,14 @@ export default function ActivityDashboard({ data }) {
       <div className="card">
         <p className="text-xs text-gray-400 uppercase tracking-wide mb-3">Сегодня</p>
         <div className="flex items-center gap-4">
-          <Ring done={today.exercises} goal={today.goal} />
+          <Ring done={today.xp_today || 0} goal={today.goal} />
           <div className="flex flex-col gap-2 flex-1">
             <div>
               <p className="text-2xl font-bold text-gray-900 leading-none">
-                {today.exercises}
-                <span className="text-sm font-normal text-gray-400"> / {today.goal}</span>
+                {today.xp_today || 0}
+                <span className="text-sm font-normal text-gray-400"> / {today.goal} XP</span>
               </p>
-              <p className="text-xs text-gray-400 mt-0.5">заданий выполнено</p>
+              <p className="text-xs text-gray-400 mt-0.5">опыт за сегодня</p>
             </div>
             {accuracy !== null && (
               <div>
