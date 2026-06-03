@@ -569,7 +569,7 @@ frontend/src/
 - TopicDetailPage: skeleton вместо Spinner при загрузке; `last_result` из get_lesson предзаполняет exerciseResults; после ответа exerciseResults[ex.id] обновляется локально
 - TrainingPage: режим "Повторение" (mode=practice) — только упражнения с is_correct=True (AI: new/bonus/review_ai/topic_d за 60 дней + curriculum не освоенные но последний ответ верный); ошибки (is_correct=False) остаются ТОЛЬКО в errors mode; без лимита в день; не считается в today_done
 - SessionResult кнопка "продолжить" для practice: "Ещё задания" (mode=bonus)
-- TrainingSessionPage: source badge показывает тему для fill_blank/multiple_choice если `currentEx.topic_title` есть: "✨ Новое · Biernik"; ограничено этими типами чтобы старые pool-упражнения без темы не показывали устаревший round-robin тег
+- TrainingSessionPage: source badge показывает тему для ВСЕХ типов если `currentEx.topic_title` есть: "✨ Новое · Biernik"; все exercise types (включая judge/tiles/word_def) получают topic через round-robin в _generate_exercises
 - multiple_choice options перемешиваются при каждой отдаче сессии (random.shuffle прямо перед return), чтобы пользователь не запоминал позиции
 - ProfilePage: ActivityDashboard вместо ActivityHeatmap; данные из `profileApi.dashboard()` (GET /profile/dashboard); skeleton при загрузке
 - AdminPage: вкладка "API" с MistralUsageChart; вкладки — ternary цепочка (`tab === 'X' ? ... : tab === 'Y' ? ...`), НЕ if/else
@@ -640,4 +640,6 @@ frontend/src/
 | Тема не соответствует упражнению | Round-robin topic assignment → flashcard про garnitur помечен "Алфавит" | _batch_for_topic_lexical() — отдельный батч per-topic для flashcard/translate/order_words; judge/tiles/word_def глобальны без тем |
 | topic_d без названия темы в бейдже | topic_title не добавлялся в content JSON | _gen_for_topic() добавляет item["topic_title"] перед сохранением |
 | Пул не пополняется при малом дефиците | Цикл в _generate_bonus/daily_pool прерывался после deficit упражнений — остальные выбрасывались | Двухпроходный цикл: сначала сохранить ВСЕ в пул, затем взять первые deficit в DailyExercise |
-| Lexical упражнения в пуле без topic_id | Сгенерированы old кодом (global batch + round-robin) до добавления _batch_for_topic_lexical | Деактивировать через is_active=0; пул сам пополнится новыми topically-tagged упражнениями при следующей генерации |
+| Упражнения без темы в пуле | Старые записи сгенерированы без topic_id (до _batch_for_topic_lexical и round-robin для global) | Деактивировать через is_active=0; пул заполнится заново с правильными темами |
+| AI объяснение остаётся от прошлого задания | handleSkip/handleReportSubmit не сбрасывали aiTexts/aiOpen; плюс race condition если fetchAiLevel отвечал после навигации | resetAiState() в handleSkip/handleReportSubmit + nonce ref в fetchAiLevel для discard stale responses |
+| Нет темы у judge/tiles/word_def | Убрали round-robin когда добавили per-topic лексические батчи | Восстановили round-robin для global батчей (judge/tiles/word_def); badge показывается для всех типов где есть topic_title |
