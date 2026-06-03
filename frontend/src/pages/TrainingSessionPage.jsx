@@ -51,20 +51,27 @@ export default function TrainingSessionPage() {
   const aiNonceRef = useRef(0)          // increments on every exercise transition; guards stale AI fetches
 
   useEffect(() => {
-    const onVisibility = () => {
-      if (document.hidden) {
-        if (lastVisibleRef.current) {
-          activeTimeRef.current += Date.now() - lastVisibleRef.current
-          lastVisibleRef.current = null
-        }
-      } else {
-        if (lastVisibleRef.current === null && activeTimeRef.current > 0) {
-          lastVisibleRef.current = Date.now()
-        }
+    const pause = () => {
+      if (lastVisibleRef.current) {
+        activeTimeRef.current += Date.now() - lastVisibleRef.current
+        lastVisibleRef.current = null
       }
     }
+    const resume = () => {
+      if (lastVisibleRef.current === null && activeTimeRef.current > 0) {
+        lastVisibleRef.current = Date.now()
+      }
+    }
+    const onVisibility = () => { document.hidden ? pause() : resume() }
+    // window blur/focus catches app-switch on desktop (visibilitychange doesn't fire there)
     document.addEventListener('visibilitychange', onVisibility)
-    return () => document.removeEventListener('visibilitychange', onVisibility)
+    window.addEventListener('blur', pause)
+    window.addEventListener('focus', resume)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility)
+      window.removeEventListener('blur', pause)
+      window.removeEventListener('focus', resume)
+    }
   }, [])
 
   useEffect(() => {
