@@ -70,6 +70,8 @@ git -C /home/politrain/politrain_code add -A && git -C /home/politrain/politrain
 ```
 После коммита — попросить пользователя запустить `! git -C /home/politrain/politrain_code push origin main` или сделать push самостоятельно.
 
+**Правило коммит-сообщений**: коммит описывает только изменения в **коде** (промты, логика, фронт). Изменения в **базе данных** (удалённые упражнения, деактивированные записи в пуле) — в коммит НЕ включать: БД не в гите, эта информация в истории бессмысленна.
+
 ## Тестовые сценарии после изменений
 
 Детальные тесты — только если быстрый тест выявил проблему. Если видишь открытые жалобы — разобрать и обновить промты.
@@ -619,7 +621,7 @@ frontend/src/
 | explain без перевода предложения | Пользователь не понимает о чём задание | `ExplainRequest` принимает `translation`; system prompt инструктирует начинать с перевода (*курсив*) |
 | letter_tiles translation показывает ___ | Пользователь не понимает что за слово | В LETTER_TILES_PROMPT: translation — ПОЛНОЕ предложение без пропуска, само слово вместо ___; пример обновлён |
 | Topic mini-test не помнит ответы | exerciseResults — только local state, сбрасывается при навигации | `get_lesson` теперь возвращает `last_result` для каждого упражнения из UserExerciseHistory; TopicDetailPage предзаполняет exerciseResults при загрузке |
-| judge_sentence некорректно помечено false | "Ja jestem zmęczony" верно для мужского рода | Удалять из БД: `DELETE FROM daily_exercises WHERE id = X`; задание #1248 удалено |
+| judge_sentence некорректно помечено false | Mistral изобретает «ошибку» ради квоты 50/50 когда не может найти реальную; примеры: "Ja jestem zmęczony" (верно для муж. рода), "zapomniał swojego biletu" (верный род. падеж после zapomnieć) | JUDGE_EXERCISES_PROMPT содержит: САМОПРОВЕРКА (назвать конкретное неверное слово → иначе true), АБСОЛЮТНЫЕ ЗАПРЕТЫ (список конструкций которые ВСЕГДА верны), ФИНАЛЬНАЯ ПРОВЕРКА (объяснение обязано называть ошибку). При обнаружении — деактивировать в пуле: `UPDATE exercise_pool SET is_active=0 WHERE id=X` |
 | Статистика не обновляется | total/correct считали только UserExerciseHistory (curriculum), AI упражнения не включались | В stats endpoint добавлены ai_total + ai_correct из DailyExercise (кроме vocab и practice) |
 | Bonus генерирует задания текущего уровня | Бонус должен быть challenge | `_next_level(user.level)` → передаётся в `_generate_exercises(level=challenge_level)` |
 | Дневная сессия короткая при сбое Mistral | session_length по умолчанию 15 | Изменено: short=10, standard=20, long=25; дефолт=20 |
