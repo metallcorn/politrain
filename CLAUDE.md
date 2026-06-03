@@ -68,7 +68,7 @@ SECRET=$(grep SECRET_KEY /home/politrain/politrain_code/.env | cut -d= -f2) ; TO
 ```bash
 git -C /home/politrain/politrain_code add -A && git -C /home/politrain/politrain_code commit -m "описание изменений"
 ```
-После коммита — попросить пользователя запустить `! git -C /home/politrain/politrain_code push origin main` или сделать push самостоятельно.
+После коммита — сразу делать push самостоятельно: `git -C /home/politrain/politrain_code push origin main`
 
 **Правило коммит-сообщений**: коммит описывает только изменения в **коде** (промты, логика, фронт). Изменения в **базе данных** (удалённые упражнения, деактивированные записи в пуле) — в коммит НЕ включать: БД не в гите, эта информация в истории бессмысленна.
 
