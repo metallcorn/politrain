@@ -48,6 +48,7 @@ export default function TrainingSessionPage() {
   const activeTimeRef = useRef(0)       // accumulated ms while tab was visible
   const lastVisibleRef = useRef(null)   // timestamp when tab became visible
   const lastUserAnswerRef = useRef('')
+  const aiNonceRef = useRef(0)          // increments on every exercise transition; guards stale AI fetches
 
   useEffect(() => {
     const onVisibility = () => {
@@ -145,11 +146,16 @@ export default function TrainingSessionPage() {
     }
   }
 
-  const handleNext = () => {
-    setResult(null)
+  const resetAiState = () => {
+    aiNonceRef.current += 1
     setAiTexts({ 1: null, 2: null })
     setAiLevel(1)
     setAiOpen(false)
+  }
+
+  const handleNext = () => {
+    setResult(null)
+    resetAiState()
     if (current + 1 >= exercises.length) {
       setSessionDone(true)
     } else {
@@ -159,6 +165,7 @@ export default function TrainingSessionPage() {
 
   const fetchAiLevel = async (level) => {
     if (aiTexts[level] !== null) return
+    const nonce = aiNonceRef.current
     setAiLoading(true)
     try {
       const res = await trainingApi.explain({
@@ -171,11 +178,13 @@ export default function TrainingSessionPage() {
         translation: currentEx.translation || null,
         level,
       })
+      if (aiNonceRef.current !== nonce) return  // navigated away — discard stale response
       setAiTexts((t) => ({ ...t, [level]: res.data.text }))
     } catch {
+      if (aiNonceRef.current !== nonce) return
       setAiTexts((t) => ({ ...t, [level]: 'Не удалось получить объяснение — попробуй ещё раз.' }))
     } finally {
-      setAiLoading(false)
+      if (aiNonceRef.current === nonce) setAiLoading(false)
     }
   }
 
@@ -198,6 +207,7 @@ export default function TrainingSessionPage() {
       }).catch(() => {})
     }
     setResult(null)
+    resetAiState()
     if (current + 1 >= exercises.length) {
       setSessionDone(true)
     } else {
@@ -222,6 +232,7 @@ export default function TrainingSessionPage() {
       setReportComment('')
       // Advance without submitting an answer — report endpoint already marks the exercise
       setResult(null)
+      resetAiState()
       if (current + 1 >= exercises.length) {
         setSessionDone(true)
       } else {
@@ -473,7 +484,7 @@ export default function TrainingSessionPage() {
             : currentEx?.source === 'practice' ? '🔁 Практика'
             : '🔄 Повторение'}
         </span>
-        {currentEx?.topic_title && ['fill_blank', 'multiple_choice'].includes(currentEx?.type) && (
+        {currentEx?.topic_title && (
           <span className="normal-case text-gray-300">· {currentEx.topic_title}</span>
         )}
       </div>

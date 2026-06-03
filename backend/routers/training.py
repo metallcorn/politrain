@@ -1916,7 +1916,12 @@ async def _generate_exercises(user, count: int, interest_themes_str: str, level:
         grammar_gen = [item for sub in results[:n_t] for item in sub]
         lexical_gen = [item for sub in results[n_t:2*n_t] for item in sub]
         judge_gen, tiles_gen, word_def_gen = results[2*n_t], results[2*n_t+1], results[2*n_t+2]
-        # judge/tiles/word_def are generic exercises — no topic assignment
+        # Assign topics to global batches via round-robin so every exercise has a badge
+        global_gen = judge_gen + tiles_gen + word_def_gen
+        for i, item in enumerate(global_gen):
+            t = topics[i % n_t]
+            item["topic_slug"] = t.slug
+            item["topic_title"] = t.title_ru or t.slug
     else:
         grammar_gen, lexical_gen, judge_gen, tiles_gen, word_def_gen = await asyncio.gather(
             _batch(prompts.GRAMMAR_EXERCISES_PROMPT, grammar_count, "grammar"),
