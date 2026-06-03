@@ -414,13 +414,11 @@ backend/
                      CHAT_SYSTEM_PROMPT и др.
   routers/
     training.py    — сессии (daily/errors/new/bonus/vocab/topic), ответы, статистика,
-                     генерация пулов (_generate_exercises(topics=None) — 5 параллельных батчей через
-                     asyncio.gather: grammar/lexical/judge/letter_tiles/word_definition;
-                     когда topics передан — grammar батч заменяется N тематическими под-батчами
-                     с текстом статьи; grammar-упражнения тегируются topic_slug+topic_title в content;
-                     _batch (для lexical/judge/tiles/word_def) добавляет в промт строку с именами
-                     grammar-правил сессии (из closure topics) — Mistral генерирует лексику/примеры
-                     в контексте этих правил; Python присваивает topic round-robin (i % len(topics)),
+                     генерация пулов (_generate_exercises(topics=None) — параллельные батчи через asyncio.gather:
+                     когда topics передан — N grammar батчей (fill_blank+mc per-topic) + N lexical батчей (flashcard+translate+order_words per-topic) + 3 глобальных (judge/tiles/word_def);
+                     grammar и lexical упражнения тегируются topic_slug+topic_title из своего батча — тема ВСЕГДА соответствует содержимому;
+                     judge_sentence/letter_tiles/word_definition генерируются глобально без темы (сложно привязать к конкретному правилу);
+                     без topics — 5 глобальных батчей без тегов тем,
                      _select_topics_for_generation(user, db, n=2) — выбирает темы для генерации:
                        приоритет: (level_idx, score_asc) — нижний уровень + низкий прогресс первыми;
                        когда ≥60% A0..current_level done → подмешивает 1 тему следующего уровня;
@@ -635,3 +633,5 @@ frontend/src/
 | `get_game_level` возвращает 4 значения | Возвращает `(rank_num, name, xp_to_next, rank_start)` — 4-tuple | Распаковывать как `level, name, xp_to_next, rank_start = get_game_level(xp)` |
 | Лидерборд пуст если никто не занимался | Запрос фильтрует `xp_earned > 0`, текущий пользователь всегда включается | Если xp=0 у всех — entries=[current_user], total_users=1 |
 | vocab source XP | source='vocab' (know/don't know) → 0 XP; flashcard с vocab_id → XP_VOCAB=5; обычные упражнения → XP_CORRECT=10 | `_vocab_mode` устанавливается в answer handler до XP-блока |
+| Тема не соответствует упражнению | Round-robin topic assignment → flashcard про garnitur помечен "Алфавит" | _batch_for_topic_lexical() — отдельный батч per-topic для flashcard/translate/order_words; judge/tiles/word_def глобальны без тем |
+| topic_d без названия темы в бейдже | topic_title не добавлялся в content JSON | _gen_for_topic() добавляет item["topic_title"] перед сохранением |

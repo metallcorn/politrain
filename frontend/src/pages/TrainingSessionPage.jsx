@@ -473,7 +473,7 @@ export default function TrainingSessionPage() {
             : currentEx?.source === 'practice' ? '🔁 Практика'
             : '🔄 Повторение'}
         </span>
-        {currentEx?.topic_title && (
+        {currentEx?.topic_title && ['fill_blank', 'multiple_choice'].includes(currentEx?.type) && (
           <span className="normal-case text-gray-300">· {currentEx.topic_title}</span>
         )}
       </div>

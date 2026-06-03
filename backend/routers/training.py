@@ -371,6 +371,15 @@ def _save_to_pool(item: dict, level: str, topic_id, db: Session):
         models.ExercisePool.question_norm == q_norm
     ).first()
     if existing:
+        # If the new exercise has a topic but the pool entry doesn't, update the pool entry
+        if topic_id and not existing.topic_id:
+            existing_content = json.loads(existing.content)
+            existing_content["topic_slug"] = item.get("topic_slug", "")
+            existing_content["topic_title"] = item.get("topic_title", "")
+            existing.content = json.dumps(existing_content, ensure_ascii=False)
+            existing.topic_id = topic_id
+            db.add(existing)
+            db.flush()
         return existing.id
     pool_ex = models.ExercisePool(
         exercise_type=item.get("type", "fill_blank"),
@@ -1849,24 +1858,65 @@ async def _generate_exercises(user, count: int, interest_themes_str: str, level:
                 print(f"[grammar:topic:{topic_obj.slug}] {model_name} failed: {e}")
         return []
 
+    async def _batch_for_topic_lexical(topic_obj, batch_count):
+        """Generate flashcard/translate/order_words exercises about the topic's vocabulary."""
+        title = topic_obj.title_ru or topic_obj.slug
+        summary = (topic_obj.explanation_ru or "")[:600]
+        prompt = (
+            "Ты генератор упражнений по польскому языку.\n"
+            f"Уровень: {gen_level}. Родной язык: {user.native_language}.\n"
+            f"Тема: {title}\n\n"
+            f"Контекст правила:\n{summary}\n\n"
+            + prompts._EXERCISE_COMMON_RULES + "\n\n"
+            f"Сгенерируй {batch_count} упражнений с лексикой и фразами, связанными с этой темой.\n"
+            "Типы (смешай равномерно): flashcard, translate, order_words.\n"
+            "FLASHCARD: question = одно польское слово или краткая фраза из контекста темы, correct_answer = перевод.\n"
+            "TRANSLATE: русская фраза ≤ 10 слов → польский перевод, используя грамматику темы.\n"
+            "ORDER_WORDS: слова польского предложения перемешаны через ' / ', correct_answer = правильный порядок, translation = перевод.\n"
+            "Ответь ТОЛЬКО валидным JSON массивом без markdown:\n"
+            "[\n"
+            '  {"type": "flashcard", "question": "mój", "correct_answer": "мой", "hint": null, "translation": null},\n'
+            '  {"type": "translate", "question": "Это моя книга.", "correct_answer": "To jest moja książka.", "hint": null, "translation": null},\n'
+            '  {"type": "order_words", "question": "jest / moja / To / książka", "correct_answer": "To jest moja książka.", "hint": null, "translation": "Это моя книга."}\n'
+            "]"
+        )
+        for model_name, timeout_sec in [("mistral-large-latest", 60.0), ("mistral-small-latest", 40.0)]:
+            try:
+                raw = await mistral.simple_prompt(
+                    system="You are a Polish language exercise generator. Respond only with valid JSON array.",
+                    user=prompt,
+                    temperature=0.8, max_tokens=2000,
+                    timeout=timeout_sec, retries=1, model=model_name,
+                    purpose="lexical_topic", user_id=user.id,
+                )
+                result = await mistral.parse_json_response(raw)
+                for item in result:
+                    item["topic_slug"] = topic_obj.slug
+                    item["topic_title"] = topic_obj.title_ru or topic_obj.slug
+                print(f"[lexical:topic:{topic_obj.slug}] {model_name} → {len(result)} for user {user.id}")
+                return result
+            except Exception as e:
+                print(f"[lexical:topic:{topic_obj.slug}] {model_name} failed: {e}")
+        return []
+
     if topics:
-        per_topic = max(2, grammar_count // len(topics))
-        all_tasks = [_batch_for_topic(t, per_topic) for t in topics] + [
-            _batch(prompts.LEXICAL_EXERCISES_PROMPT, lexical_count, "lexical"),
-            _batch(prompts.JUDGE_EXERCISES_PROMPT, judge_count, "judge"),
-            _batch(prompts.LETTER_TILES_PROMPT, letter_tiles_count, "letter_tiles"),
-            _batch(prompts.WORD_DEFINITION_PROMPT, word_def_count, "word_def"),
-        ]
-        results = await asyncio.gather(*all_tasks)
         n_t = len(topics)
+        per_topic_grammar = max(2, grammar_count // n_t)
+        per_topic_lexical = max(1, lexical_count // n_t)
+        all_tasks = (
+            [_batch_for_topic(t, per_topic_grammar) for t in topics] +
+            [_batch_for_topic_lexical(t, per_topic_lexical) for t in topics] +
+            [
+                _batch(prompts.JUDGE_EXERCISES_PROMPT, judge_count, "judge"),
+                _batch(prompts.LETTER_TILES_PROMPT, letter_tiles_count, "letter_tiles"),
+                _batch(prompts.WORD_DEFINITION_PROMPT, word_def_count, "word_def"),
+            ]
+        )
+        results = await asyncio.gather(*all_tasks)
         grammar_gen = [item for sub in results[:n_t] for item in sub]
-        lexical_gen, judge_gen, tiles_gen, word_def_gen = results[n_t], results[n_t+1], results[n_t+2], results[n_t+3]
-        # Tag non-grammar exercises with topics round-robin in Python — no need to involve Mistral
-        non_grammar = lexical_gen + judge_gen + tiles_gen + word_def_gen
-        for i, item in enumerate(non_grammar):
-            t = topics[i % len(topics)]
-            item["topic_slug"] = t.slug
-            item["topic_title"] = t.title_ru or t.slug
+        lexical_gen = [item for sub in results[n_t:2*n_t] for item in sub]
+        judge_gen, tiles_gen, word_def_gen = results[2*n_t], results[2*n_t+1], results[2*n_t+2]
+        # judge/tiles/word_def are generic exercises — no topic assignment
     else:
         grammar_gen, lexical_gen, judge_gen, tiles_gen, word_def_gen = await asyncio.gather(
             _batch(prompts.GRAMMAR_EXERCISES_PROMPT, grammar_count, "grammar"),
@@ -2062,6 +2112,9 @@ async def _generate_topic_exercises_for_daily(user, db: Session, today) -> list:
                 continue
             if _norm(item.get("question", "")) in seen_qs:
                 continue
+            # Add topic info to content JSON so the badge can display the topic name
+            item["topic_slug"] = topic_obj.slug
+            item["topic_title"] = topic_obj.title_ru or topic_obj.slug
             results.append((item, topic_obj.id))
         print(f"[topic_d:{topic_obj.slug}] {len(results)} exercises for user {user.id}")
         return results
@@ -2262,10 +2315,8 @@ async def _generate_daily_pool(user, db: Session, today, count: int):
             _generate_topic_exercises_for_daily(user, db, today),
         )
         seen_qs = _seen_questions(user.id, db)
-        ai_added = 0
+        validated = []
         for item in generated:
-            if ai_added >= deficit:
-                break
             item = _validate_type(item)
             item = _fix_mc_exercise(item) if item else None
             item = _fix_fill_blank_exercise(item) if item else None
@@ -2280,6 +2331,16 @@ async def _generate_daily_pool(user, db: Session, today, count: int):
             item = _sanitize_native_fields(item, user.native_language)
             if _norm(item.get("question", "")) in seen_qs:
                 continue
+            validated.append(item)
+        # Save ALL valid exercises to pool (populates shared pool regardless of deficit)
+        for item in validated:
+            topic_id = topic_id_by_slug.get(item.get("topic_slug"))
+            _save_to_pool(item, user.level, topic_id, db)
+        # Add only up to deficit exercises to today's DailyExercise
+        ai_added = 0
+        for item in validated:
+            if ai_added >= deficit:
+                break
             topic_id = topic_id_by_slug.get(item.get("topic_slug"))
             pool_id = _save_to_pool(item, user.level, topic_id, db)
             entries.append(models.DailyExercise(
@@ -2351,10 +2412,8 @@ async def _generate_bonus_pool(user, db: Session, today, count: int):
     if deficit > 0:
         generated = await _generate_exercises(user, deficit, interest_themes_str, level=challenge_level, topics=gen_topics or None)
         seen_qs = _seen_questions(user.id, db)
-        added = 0
+        validated = []
         for item in generated:
-            if added >= deficit:
-                break
             item = _validate_type(item)
             item = _fix_mc_exercise(item) if item else None
             item = _fix_fill_blank_exercise(item) if item else None
@@ -2369,6 +2428,16 @@ async def _generate_bonus_pool(user, db: Session, today, count: int):
             item = _sanitize_native_fields(item, user.native_language)
             if _norm(item.get("question", "")) in seen_qs:
                 continue
+            validated.append(item)
+        # Save ALL valid exercises to pool (populates shared pool regardless of deficit)
+        for item in validated:
+            topic_id = topic_id_by_slug.get(item.get("topic_slug"))
+            _save_to_pool(item, challenge_level, topic_id, db)
+        # Add only up to deficit exercises to today's DailyExercise
+        added = 0
+        for item in validated:
+            if added >= deficit:
+                break
             topic_id = topic_id_by_slug.get(item.get("topic_slug"))
             pool_id = _save_to_pool(item, challenge_level, topic_id, db)
             db.add(models.DailyExercise(
