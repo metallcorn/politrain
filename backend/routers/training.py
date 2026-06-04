@@ -110,6 +110,8 @@ def _fix_fill_blank_exercise(item: dict) -> dict | None:
     answer_leaked = bool(re.search(r'\b' + re.escape(c_norm) + r'\b', q_norm))
 
     if has_blank and not answer_leaked:
+        if not _check_modal_has_infinitive(item):
+            return None  # modal verb answer but no infinitive in question — incomplete sentence
         return item  # perfect format
 
     def _remove_group(m):
@@ -126,6 +128,8 @@ def _fix_fill_blank_exercise(item: dict) -> dict | None:
                     break
         if "___" in fixed:
             item["question"] = fixed
+            if not _check_modal_has_infinitive(item):
+                return None
             return item
         return None
 
@@ -146,6 +150,28 @@ def _fix_fill_blank_exercise(item: dict) -> dict | None:
 
     # No blank and answer not in question at all — can't build a proper exercise
     return None
+
+
+_MODAL_VERBS_PL = {
+    "muszę", "musisz", "musi", "musimy", "musicie", "muszą",
+    "mogę", "możesz", "może", "możemy", "możecie", "mogą",
+    "chcę", "chcesz", "chce", "chcemy", "chcecie", "chcą",
+    "powinienem", "powinnam", "powinieneś", "powinnaś",
+    "powinien", "powinna", "powinniśmy", "powinnyśmy",
+    "powinniście", "powinnyście", "powinni", "powinny",
+    "trzeba", "warto", "wolno", "można",
+    "staram", "stara", "staramy",
+}
+
+
+def _check_modal_has_infinitive(item: dict) -> bool:
+    """If correct_answer is a modal verb, the question must contain an infinitive (-ć/-c)."""
+    correct = _strip(item.get("correct_answer", "").rstrip(".?!,;"))
+    if correct not in _MODAL_VERBS_PL:
+        return True  # not a modal — no check needed
+    question = item.get("question", "")
+    # An infinitive ends in -ć or -c (e.g. przyjść, być, pracować, móc)
+    return bool(re.search(r'\w+[ćc]\b', question, re.IGNORECASE))
 
 
 def _fix_letter_tiles_exercise(item: dict) -> dict | None:
