@@ -82,7 +82,15 @@ export default function WordOrder({ exercise, onAnswer, result }) {
           <p className={`font-semibold ${result.is_correct ? 'text-green-700' : 'text-red-700'}`}>
             {result.is_correct ? '✓ Правильно!' : '✗ Неправильно'}
           </p>
-          {!result.is_correct && <p className="text-sm text-gray-700 mt-1">Правильно: <strong>{result.correct_answer}</strong></p>}
+          {!result.is_correct && result.correct_answer && (() => {
+            const alts = result.correct_answer.split(' / ').map(s => s.trim()).filter(Boolean)
+            return alts.length > 1
+              ? <div className="text-sm text-gray-700 mt-1">
+                  <span>Варианты:</span>
+                  {alts.map((a, i) => <p key={i} className="font-medium ml-2">• {a}</p>)}
+                </div>
+              : <p className="text-sm text-gray-700 mt-1">Правильно: <strong>{alts[0]}</strong></p>
+          })()}
           {exercise.translation && (
             <p className="text-sm text-gray-500 mt-1 italic">"{exercise.translation}"</p>
           )}

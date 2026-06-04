@@ -233,7 +233,7 @@ def _fix_judge_sentence_exercise(item: dict) -> dict | None:
 
 
 def _fix_order_words_exercise(item: dict) -> dict | None:
-    """Validate that question words match correct_answer words, then shuffle them. Returns None if unfixable."""
+    """Validate that question words match correct_answer words (all alternatives), then shuffle."""
     if item.get("type") != "order_words":
         return item
     question = item.get("question", "")
@@ -246,34 +246,39 @@ def _fix_order_words_exercise(item: dict) -> dict | None:
     q_words = sorted(_strip(re.sub(r'\(.*?\)', '', w).rstrip('.?!,;')) for w in raw_words)
     q_words = [w for w in q_words if w]
 
-    # Extract words from correct answer
-    a_words = sorted(_strip(w.rstrip('.?!,;')) for w in correct.split() if w.strip())
-    a_words = [w for w in a_words if w]
-
-    if not q_words or not a_words:
-        return None
-
-    # Require at least 3 words — 1-2 word exercises are trivial
-    if len(a_words) < 3:
-        return None
-
-    if q_words != a_words:
-        # Words don't match — discard this exercise
-        return None
-
-    # Reject if the sentence ends with a preposition or conjunction — unfinished sentence
+    # Support multiple valid orderings separated by ' / '
+    # Each alternative must contain exactly the same word set as the question
+    alternatives = [a.strip() for a in correct.split(' / ') if a.strip()]
+    valid_alternatives = []
     _PL_CLAUSE_ENDS = {"na", "w", "do", "z", "ze", "od", "po", "przy", "nad", "pod",
                        "przed", "za", "przez", "o", "u", "dla", "bez", "i", "a", "ale",
                        "że", "czy", "bo", "lub", "albo", "ani"}
-    last_word = correct.rstrip('.?!,;').split()[-1].lower() if correct.split() else ""
-    if last_word in _PL_CLAUSE_ENDS:
+    for alt in alternatives:
+        a_words = sorted(_strip(w.rstrip('.?!,;')) for w in alt.split() if w.strip())
+        a_words = [w for w in a_words if w]
+        if not a_words or a_words != q_words:
+            continue
+        last_word = alt.rstrip('.?!,;').split()[-1].lower() if alt.split() else ""
+        if last_word in _PL_CLAUSE_ENDS:
+            continue
+        valid_alternatives.append(alt)
+
+    if not valid_alternatives:
         return None
 
-    # Shuffle words so they're not in the same order as the correct answer
+    # Require at least 3 words
+    first_alt_words = valid_alternatives[0].split()
+    if len(first_alt_words) < 3:
+        return None
+
+    item["correct_answer"] = " / ".join(valid_alternatives)
+
+    # Shuffle words so they're not in the same order as any alternative
     shuffled = raw_words[:]
-    for _ in range(10):  # try up to 10 times to get a different order
+    for _ in range(10):
         random.shuffle(shuffled)
-        if " ".join(shuffled).lower() != correct.lower().rstrip('.?!,;'):
+        shuffled_str = " ".join(shuffled).lower()
+        if not any(shuffled_str == alt.lower().rstrip('.?!,;') for alt in valid_alternatives):
             break
     item["question"] = " / ".join(shuffled)
     return item

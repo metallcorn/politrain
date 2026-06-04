@@ -225,14 +225,16 @@ LEXICAL_EXERCISES_PROMPT = (
     "ORDER_WORDS — расставь слова:\n"
     '- question: слова из correct_answer через " / " — ТОЧНО ТЕ ЖЕ слова в тех же формах\n'
     "- НЕЛЬЗЯ добавлять лишние слова — система проверяет точное совпадение множества\n"
-    "- Выбирай предложения с единственным возможным порядком — избегай наречий (bardzo, już, też) которые можно поставить в разные позиции\n"
-    "- hint: грамматическое правило без названия конкретных слов из ответа\n"
+    "- Если возможно несколько правильных порядков — запиши ВСЕ варианты в correct_answer через ' / '\n"
+    "  Пример: наречие времени (wczoraj, jutro, dziś, zawsze, często) можно ставить в начало или конец;\n"
+    "  тогда correct_answer = \"Wczoraj czytałem tę książkę. / Czytałem tę książkę wczoraj.\"\n"
+    "- hint: грамматическое правило, не называй конкретных слов из ответа; НЕ пиши что-то одно про порядок если порядков несколько\n"
     "- word_hints: польские слова → {native_language}\n\n"
     "Ответь ТОЛЬКО валидным JSON массивом без markdown:\n"
     "[\n"
     '  {{"type": "flashcard", "question": "mieć motyle w brzuchu", "correct_answer": "волнение / бабочки в животе", "options": null, "hint": null, "explanation": "О приятном волнении или влюблённости", "translation": "букв. \'иметь бабочек в животе\'", "word_hints": null}},\n'
     '  {{"type": "translate", "question": "Я уже иду домой.", "correct_answer": "Już idę do domu.", "options": null, "hint": null, "explanation": "już = уже, idę = иду", "translation": null, "word_hints": {{"уже": "już", "иду": "idę", "домой": "do domu"}}}},\n'
-    '  {{"type": "order_words", "question": "sklep / do / idę / jutro", "correct_answer": "Jutro idę do sklepu.", "options": null, "hint": "обстоятельство времени — в начало", "explanation": null, "translation": null, "word_hints": {{"jutro": "завтра", "sklep": "магазин", "idę": "иду"}}}}\n'
+    '  {{"type": "order_words", "question": "tę / wczoraj / czytałem / książkę", "correct_answer": "Wczoraj czytałem tę książkę. / Czytałem tę książkę wczoraj.", "options": null, "hint": "Порядок слов в польском гибкий — наречие времени может стоять в начале или конце", "explanation": null, "translation": null, "word_hints": {{"wczoraj": "вчера", "czytałem": "читал", "tę": "эту", "książkę": "книгу"}}}}\n'
     "]"
 )
 
