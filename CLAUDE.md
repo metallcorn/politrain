@@ -208,11 +208,12 @@ curl -s "http://localhost:8000/api/v1/admin/stats" -H "Authorization: Bearer $TO
 curl -s "http://localhost:8000/api/v1/admin/reports?resolved=false" -H "Authorization: Bearer $TOKEN" | \
   python3 -c "import sys,json; r=json.load(sys.stdin); print('open reports:', len(r)); [print(' #'+str(x['id']), x.get('comment','')[:60]) for x in r]"
 # Если open reports > 0: разобрать каждую, обновить промты, закрыть в БД
-# ПРАВИЛО разбора отчётов:
-# 1. Всегда читать ПОЛНЫЙ снапшот задания через SQL прежде чем что-либо говорить:
-#    SELECT comment, exercise_snapshot, daily_exercise_id FROM generated_exercise_reports WHERE id=X
+# ПРАВИЛО разбора отчётов (строго соблюдать, не нарушать даже если кажется очевидным):
+# 1. Читать ПОЛНЫЙ снапшот через SQL: SELECT comment, exercise_snapshot, daily_exercise_id FROM generated_exercise_reports WHERE id=X
 # 2. Никогда не интерпретировать по комментарию пользователя без просмотра самого задания
-# 3. Разбирать по одному — показать содержимое → предложить фикс → дождаться согласия → делать
+# 3. После анализа — объяснить проблему и предложить ВАРИАНТЫ (включая системные правки промта)
+# 4. Дождаться явного согласия пользователя — только потом реализовывать
+# 5. НЕ ДЕЛАТЬ ничего между шагами 3 и 4, даже если решение кажется очевидным
 ```
 
 ### 14б. Оценка сессии
