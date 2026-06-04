@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import Markdown from '../ui/Markdown'
+import WordHintText from './WordHintText'
 
 export default function MultipleChoice({ exercise, onAnswer, result }) {
   const [selected, setSelected] = useState(null)
@@ -13,11 +14,19 @@ export default function MultipleChoice({ exercise, onAnswer, result }) {
   }
 
   const options = exercise.options || []
+  const wordHints = exercise.word_hints || {}
+  const hasHints = Object.keys(wordHints).length > 0
 
   return (
     <div className="flex flex-col gap-4">
       <div className="card">
-        <p className="text-lg font-medium text-gray-800">{exercise.question}</p>
+        <WordHintText
+          text={exercise.question}
+          wordHints={wordHints}
+          onHintUsed={() => setHintUsed(true)}
+          saveToVocab
+          className="text-lg font-medium text-gray-800"
+        />
         {exercise.hint && !selected && (
           hintShown
             ? <div className="text-sm text-amber-600 mt-2 animate-fade-in">💡 <Markdown className="inline">{exercise.hint}</Markdown> <span className="text-xs opacity-60">(-1 XP)</span></div>
@@ -27,6 +36,9 @@ export default function MultipleChoice({ exercise, onAnswer, result }) {
               >
                 💡 Показать подсказку <span className="opacity-60">(-1 XP)</span>
               </button>
+        )}
+        {hasHints && !selected && (
+          <p className="text-xs text-gray-400 mt-2">Нажми на подчёркнутое слово — увидишь перевод</p>
         )}
       </div>
 

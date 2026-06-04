@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import Button from '../ui/Button'
 import Markdown from '../ui/Markdown'
+import WordHintText from './WordHintText'
 
 function normalize(s) {
   return (s || '').toLowerCase().trim()
@@ -28,6 +29,9 @@ export default function LetterTilesBlank({ exercise, onAnswer, result, loading }
   const [submitted, setSubmitted] = useState(false)
   const [hintShown, setHintShown] = useState(false)
   const [hintUsed, setHintUsed] = useState(false)
+
+  const wordHints = exercise.word_hints || {}
+  const hasHints = Object.keys(wordHints).length > 0
 
   const place = (tile) => {
     if (submitted) return
@@ -59,9 +63,18 @@ export default function LetterTilesBlank({ exercise, onAnswer, result, loading }
   return (
     <div className="flex flex-col gap-4">
       <div className="card">
-        <p className="text-lg font-medium text-gray-800">{exercise.question}</p>
+        <WordHintText
+          text={exercise.question}
+          wordHints={wordHints}
+          onHintUsed={() => setHintUsed(true)}
+          saveToVocab
+          className="text-lg font-medium text-gray-800"
+        />
         {exercise.translation && (
           <p className="text-sm text-gray-400 mt-1 italic">{exercise.translation}</p>
+        )}
+        {hasHints && !submitted && (
+          <p className="text-xs text-gray-400 mt-1">Нажми на подчёркнутое слово — увидишь перевод</p>
         )}
         {exercise.hint && !submitted && (
           hintShown

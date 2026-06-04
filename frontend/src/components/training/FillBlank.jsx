@@ -41,6 +41,7 @@ export default function FillBlank({ exercise, onAnswer, result, loading }) {
                   text={part}
                   wordHints={wordHints}
                   onHintUsed={() => setHintUsed(true)}
+                  saveToVocab
                   className="inline"
                 />
                 {i < parts.length - 1 && (

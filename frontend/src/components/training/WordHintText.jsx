@@ -1,11 +1,14 @@
 import { useState } from 'react'
+import { vocabApi } from '../../api'
 
 // Splits text into word/space tokens and makes hintable words clickable.
 // wordHints: { "word": "translation" }
-// onHintUsed: called once on first click
-export default function WordHintText({ text, wordHints = {}, onHintUsed, className = '' }) {
+// onHintUsed: called once on first click (for -1 XP tracking)
+// saveToVocab: if true, auto-saves clicked word to user vocabulary pool
+export default function WordHintText({ text, wordHints = {}, onHintUsed, saveToVocab = false, className = '' }) {
   const [activeHint, setActiveHint] = useState(null)
   const [hintFired, setHintFired] = useState(false)
+  const [savedWords, setSavedWords] = useState(new Set())
 
   if (!text) return null
 
@@ -21,10 +24,15 @@ export default function WordHintText({ text, wordHints = {}, onHintUsed, classNa
     const key = normalize(raw)
     const translation = hints[key]
     if (!translation) return
-    setActiveHint(activeHint?.key === key ? null : { key, raw: raw.replace(/[.,!?;:«»"'()[\]…—–]/g, ''), translation })
+    const cleanWord = raw.replace(/[.,!?;:«»"'()[\]…—–]/g, '')
+    setActiveHint(activeHint?.key === key ? null : { key, raw: cleanWord, translation })
     if (!hintFired) {
       setHintFired(true)
       onHintUsed?.()
+    }
+    if (saveToVocab && !savedWords.has(key)) {
+      setSavedWords(prev => new Set([...prev, key]))
+      vocabApi.learnWord({ word: cleanWord, translation }).catch(() => {})
     }
   }
 
@@ -55,6 +63,9 @@ export default function WordHintText({ text, wordHints = {}, onHintUsed, classNa
           <span className="font-medium text-blue-800">{activeHint.raw}</span>
           <span className="text-gray-400">→</span>
           <span className="text-gray-700">{activeHint.translation}</span>
+          {saveToVocab && savedWords.has(activeHint.key) && (
+            <span className="text-xs text-green-600 ml-1" title="Добавлено в словарь">📚</span>
+          )}
         </div>
       )}
     </div>

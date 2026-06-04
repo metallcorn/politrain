@@ -2028,11 +2028,11 @@ async def _generate_topic_pool(user, topic_obj, db: Session, today, count: int):
         "- correct_answer ДОСЛОВНО совпадает с одним из options\n"
         "- Варианты принципиально разные (разные падежи/формы)\n"
         "- Если вопрос о значении — все варианты на " + user.native_language + "\n"
-        "- word_hints: null\n\n"
+        "- word_hints: польские слова question → " + user.native_language + " (1-3 ключевых, кроме вариантов)\n\n"
         "Ответь ТОЛЬКО валидным JSON массивом без markdown:\n"
         "[\n"
         '  {"type": "fill_blank", "question": "Poproszę ___ kawy.", "correct_answer": "filiżankę", "options": null, "hint": "biernik od filiżanka", "explanation": "После poproszę — biernik", "translation": null, "word_hints": {"poproszę": "прошу"}},\n'
-        '  {"type": "multiple_choice", "question": "Lubię ___ (herbata).", "options": ["herbatę", "herbaty", "herbacie", "herbata"], "correct_answer": "herbatę", "hint": null, "explanation": "После lubię — biernik", "translation": null, "word_hints": null}\n'
+        '  {"type": "multiple_choice", "question": "Lubię ___ (herbata).", "options": ["herbatę", "herbaty", "herbacie", "herbata"], "correct_answer": "herbatę", "hint": null, "explanation": "После lubię — biernik", "translation": null, "word_hints": {"lubię": "люблю"}}\n'
         "]"
     )
 
@@ -2150,11 +2150,12 @@ async def _generate_topic_exercises_for_daily(user, db: Session, today) -> list:
             "- hint: грамматическая категория, НЕ сам ответ\n\n"
             "MULTIPLE_CHOICE — 4 варианта:\n"
             "- correct_answer ДОСЛОВНО совпадает с одним из options\n"
-            "- Варианты принципиально разные (разные падежи/формы)\n\n"
+            "- Варианты принципиально разные (разные падежи/формы)\n"
+            "- word_hints: польские слова question → " + user.native_language + " (1-3 ключевых)\n\n"
             "Ответь ТОЛЬКО валидным JSON массивом без markdown:\n"
             "[\n"
             '  {"type": "fill_blank", "question": "Poproszę ___ kawy.", "correct_answer": "filiżankę", "options": null, "hint": "biernik od filiżanka", "explanation": "После poproszę — biernik", "translation": null, "word_hints": {"poproszę": "прошу"}},\n'
-            '  {"type": "multiple_choice", "question": "Lubię ___ (herbata).", "options": ["herbatę", "herbaty", "herbacie", "herbata"], "correct_answer": "herbatę", "hint": null, "explanation": "После lubię — biernik", "translation": null, "word_hints": null}\n'
+            '  {"type": "multiple_choice", "question": "Lubię ___ (herbata).", "options": ["herbatę", "herbaty", "herbacie", "herbata"], "correct_answer": "herbatę", "hint": null, "explanation": "После lubię — biernik", "translation": null, "word_hints": {"lubię": "люблю"}}\n'
             "]"
         )
         raw = None

@@ -165,11 +165,11 @@ GRAMMAR_EXERCISES_PROMPT = (
     "- ЗАПРЕЩЕНО: мета-вопросы вида 'Что происходит с X в контексте Y?' где правильная форма уже видна в вопросе\n"
     "  Правильно: польское предложение с ___ (Zaprosiłem do domu ___ kolegę.) → варианты формы\n"
     "  Неправильно: 'Что происходит с kolega в контексте Zaprosiłem do domu ___ kolegę?' — ответ виден\n"
-    "- word_hints: null\n\n"
+    "- word_hints: польские слова question → {native_language} (1-3 ключевых, кроме вариантов ответа)\n\n"
     "Ответь ТОЛЬКО валидным JSON массивом без markdown:\n"
     "[\n"
     '  {{"type": "fill_blank", "question": "Poproszę ___ kawy.", "correct_answer": "filiżankę", "options": null, "hint": "biernik od filiżanka", "explanation": "После poproszę — biernik", "translation": "Прошу чашечку кофе.", "word_hints": {{"poproszę": "прошу", "kawy": "кофе"}}}},\n'
-    '  {{"type": "multiple_choice", "question": "Lubię ___ (herbata).", "options": ["herbatę", "herbaty", "herbacie", "herbata"], "correct_answer": "herbatę", "hint": null, "explanation": "После lubię — biernik: herbata→herbatę", "translation": null, "word_hints": null}},\n'
+    '  {{"type": "multiple_choice", "question": "Lubię ___ (herbata).", "options": ["herbatę", "herbaty", "herbacie", "herbata"], "correct_answer": "herbatę", "hint": null, "explanation": "После lubię — biernik: herbata→herbatę", "translation": null, "word_hints": {{"lubię": "люблю"}}}},\n'
     '  {{"type": "judge_sentence", "question": "Wczoraj ja poszedłem do kina.", "correct_answer": "true", "options": null, "hint": null, "explanation": "poszedłem — правильная форма 1 л. ед.ч. муж. рода", "translation": null, "word_hints": {{"wczoraj": "вчера", "kina": "кино (род.п.)"}}}}\n'
     "]"
 )
@@ -282,14 +282,15 @@ WORD_DEFINITION_PROMPT = (
     "  Подсказка тоже по-польски\n"
     "- translation: перевод correct_answer на {native_language} — показывается после ответа\n"
     "- explanation: почему описание подходит, на {native_language} (необязательно)\n"
-    "- options: null\n\n"
+    "- options: null\n"
+    "- word_hints: ключевые польские слова из описания → {native_language} (3-5 слов)\n\n"
     "Выбирай конкретные слова которые легко описать — предметы, животные, еда, действия.\n"
     "Избегай абстрактных понятий (miłość, wolność) — их сложно описать однозначно.\n"
     "Уровень описания должен соответствовать {level} пользователя.\n\n"
     "Ответь ТОЛЬКО валидным JSON массивом без markdown:\n"
     "[\n"
-    '  {{"type": "word_definition", "question": "To jest napój, który pijemy rano. Może być czarna lub z mlekiem i cukrem.", "correct_answer": "kawa", "options": null, "hint": "K... — napój", "explanation": "Кофе — один из самых популярных напитков в Польше", "translation": "кофе"}},\n'
-    '  {{"type": "word_definition", "question": "To zwierzę domowe, które miauczy i lubi spać na kanapie.", "correct_answer": "kot", "options": null, "hint": "K... — zwierzę domowe", "explanation": null, "translation": "кот / кошка"}}\n'
+    '  {{"type": "word_definition", "question": "To jest napój, który pijemy rano. Może być czarna lub z mlekiem i cukrem.", "correct_answer": "kawa", "options": null, "hint": "K... — napój", "explanation": "Кофе — один из самых популярных напитков в Польше", "translation": "кофе", "word_hints": {{"napój": "напиток", "rano": "утром", "mlekiem": "молоком", "cukrem": "сахаром"}}}},\n'
+    '  {{"type": "word_definition", "question": "To zwierzę domowe, które miauczy i lubi spać na kanapie.", "correct_answer": "kot", "options": null, "hint": "K... — zwierzę domowe", "explanation": null, "translation": "кот / кошка", "word_hints": {{"zwierzę": "животное", "miauczy": "мяукает", "kanapie": "диване"}}}}\n'
     "]"
 )
 

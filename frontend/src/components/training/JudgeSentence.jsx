@@ -2,6 +2,7 @@ import { useState } from 'react'
 import Button from '../ui/Button'
 import { CheckCircle, XCircle } from 'lucide-react'
 import Markdown from '../ui/Markdown'
+import WordHintText from './WordHintText'
 
 export default function JudgeSentence({ exercise, onAnswer, result, loading }) {
   const [chosen, setChosen] = useState(null)
@@ -13,6 +14,9 @@ export default function JudgeSentence({ exercise, onAnswer, result, loading }) {
     setChosen(value)
     onAnswer({ user_answer: value, hint_used: hintUsed })
   }
+
+  const wordHints = exercise.word_hints || {}
+  const hasHints = Object.keys(wordHints).length > 0
 
   const btnClass = (value) => {
     const base = 'flex-1 flex flex-col items-center gap-2 py-5 rounded-2xl border-2 font-semibold text-base transition-all'
@@ -30,7 +34,16 @@ export default function JudgeSentence({ exercise, onAnswer, result, loading }) {
     <div className="flex flex-col gap-5">
       <div>
         <p className="text-xs text-gray-400 uppercase tracking-wide mb-3">Это правильное предложение?</p>
-        <p className="text-xl font-semibold text-gray-900 leading-relaxed">{exercise.question}</p>
+        <WordHintText
+          text={exercise.question}
+          wordHints={wordHints}
+          onHintUsed={() => setHintUsed(true)}
+          saveToVocab
+          className="text-xl font-semibold text-gray-900 leading-relaxed"
+        />
+        {hasHints && !chosen && (
+          <p className="text-xs text-gray-400 mt-2">Нажми на подчёркнутое слово — увидишь перевод</p>
+        )}
         {exercise.translation && !result && (
           translationShown
             ? <p className="text-sm text-amber-600 mt-2 italic animate-fade-in">"{exercise.translation}" <span className="text-xs opacity-60">(-1 XP)</span></p>

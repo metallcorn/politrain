@@ -1,5 +1,7 @@
 from datetime import date
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from typing import List
 
@@ -148,3 +150,53 @@ def vocab_stats(
         "due_count": due_count,
         "pending": pending,
     }
+
+
+class LearnWordRequest(BaseModel):
+    word: str
+    translation: str
+
+
+@router.post("/learn-word")
+def learn_word(
+    req: LearnWordRequest,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    word = req.word.strip()
+    translation = req.translation.strip()
+    if not word or not translation:
+        raise HTTPException(status_code=400, detail="word and translation required")
+
+    vocab = db.query(models.Vocabulary).filter(
+        func.lower(models.Vocabulary.polish) == word.lower()
+    ).first()
+
+    if not vocab:
+        vocab = models.Vocabulary(
+            polish=word,
+            translation_ru=translation,
+            translation_en="",
+            level=current_user.level,
+        )
+        db.add(vocab)
+        db.flush()
+
+    uv = db.query(models.UserVocabulary).filter_by(
+        user_id=current_user.id, vocab_id=vocab.id
+    ).first()
+    is_new = uv is None
+
+    if not uv:
+        uv = models.UserVocabulary(
+            user_id=current_user.id,
+            vocab_id=vocab.id,
+            ease_factor=2.5,
+            interval_days=1,
+            correct_streak=0,
+            next_review=date.today(),
+        )
+        db.add(uv)
+
+    db.commit()
+    return {"ok": True, "vocab_id": vocab.id, "is_new": is_new}

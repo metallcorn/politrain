@@ -56,6 +56,7 @@ export const vocabApi = {
   due: () => api.get('/vocabulary/due'),
   review: (id, quality) => api.post(`/vocabulary/${id}/review`, { quality }),
   stats: () => api.get('/vocabulary/stats'),
+  learnWord: (data) => api.post('/vocabulary/learn-word', data),
 }
 
 // Training
