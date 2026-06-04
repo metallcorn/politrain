@@ -111,6 +111,9 @@ function VocabCard({ exercise, onAnswer, result, loading }) {
         <div className={`w-full rounded-xl p-4 text-center animate-bounce-in ${checked.correct ? 'bg-green-50 border-2 border-green-200' : 'bg-red-50 border-2 border-red-200'}`}>
           <p className={`text-lg font-semibold ${checked.correct ? 'text-green-700' : 'text-red-700'}`}>
             {checked.correct ? '✓ Верно!' : '✗ Неверно'}
+            {checked.correct && result?.xp_earned > 0 && (
+              <span className="text-xs font-normal text-yellow-600 ml-2">+{result.xp_earned} XP</span>
+            )}
           </p>
           {!checked.correct && checked.typed && (
             <p className="text-gray-600 mt-1 text-sm">Твой ответ: <span className="font-medium">{checked.typed}</span></p>

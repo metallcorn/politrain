@@ -18,7 +18,7 @@ import prompts
 from services import mistral
 from services.sm2 import calculate_next_review
 from services.gamification import (
-    add_xp, XP_CORRECT, XP_INCORRECT, XP_VOCAB, XP_COMPLETE_SESSION,
+    add_xp, XP_CORRECT, XP_INCORRECT, XP_VOCAB, XP_VOCAB_NEW, XP_VOCAB_REVIEW, XP_COMPLETE_SESSION,
     check_achievements, update_daily_activity, update_streak
 )
 
@@ -1066,7 +1066,7 @@ async def submit_answer(
 
                 # XP mode for vocab flashcards
                 if de.source == "vocab":
-                    _vocab_mode = "zero"      # know/don't know — no actual quiz
+                    _vocab_mode = "vocab_session"  # VocabCard type-and-check — small XP
                 elif ex_type == "flashcard" and content.get("vocab_id"):
                     _vocab_mode = "reduced"   # SRS vocab — easier than exercises
 
@@ -1295,8 +1295,14 @@ async def submit_answer(
     if diacritic_hint and _vocab_mode == "normal":
         xp = XP_CORRECT // 2
         add_xp(current_user, db, xp)
-    elif _vocab_mode == "zero":
-        xp = 0  # know/don't know vocab — no actual quiz, no XP
+    elif _vocab_mode == "vocab_session":
+        if is_correct:
+            vocab_status = content.get("vocab_status", "new")
+            xp = XP_VOCAB_REVIEW if vocab_status == "review" else XP_VOCAB_NEW
+        else:
+            xp = 0
+        if xp:
+            add_xp(current_user, db, xp)
     elif _vocab_mode == "reduced":
         xp = XP_VOCAB if is_correct else 0
         add_xp(current_user, db, xp)

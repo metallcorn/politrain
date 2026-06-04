@@ -4,7 +4,9 @@ import models
 
 XP_CORRECT = 10
 XP_INCORRECT = 2
-XP_VOCAB = 5        # SRS vocab flashcards (reduced — easier than exercises)
+XP_VOCAB = 5        # SRS vocab flashcards in daily/bonus mode
+XP_VOCAB_NEW = 2    # vocab session: new or error word answered correctly
+XP_VOCAB_REVIEW = 1 # vocab session: review word answered correctly
 XP_COMPLETE_TOPIC = 50
 XP_COMPLETE_SESSION = 30
 XP_CHAT_MESSAGE = 5
