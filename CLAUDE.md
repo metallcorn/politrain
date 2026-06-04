@@ -208,6 +208,11 @@ curl -s "http://localhost:8000/api/v1/admin/stats" -H "Authorization: Bearer $TO
 curl -s "http://localhost:8000/api/v1/admin/reports?resolved=false" -H "Authorization: Bearer $TOKEN" | \
   python3 -c "import sys,json; r=json.load(sys.stdin); print('open reports:', len(r)); [print(' #'+str(x['id']), x.get('comment','')[:60]) for x in r]"
 # Если open reports > 0: разобрать каждую, обновить промты, закрыть в БД
+# ПРАВИЛО разбора отчётов:
+# 1. Всегда читать ПОЛНЫЙ снапшот задания через SQL прежде чем что-либо говорить:
+#    SELECT comment, exercise_snapshot, daily_exercise_id FROM generated_exercise_reports WHERE id=X
+# 2. Никогда не интерпретировать по комментарию пользователя без просмотра самого задания
+# 3. Разбирать по одному — показать содержимое → предложить фикс → дождаться согласия → делать
 ```
 
 ### 14б. Оценка сессии
