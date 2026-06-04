@@ -161,6 +161,36 @@ curl -s "http://localhost:8000/api/v1/vocabulary/stats" -H "Authorization: Beare
 # Проверяем: known_count, new_count, wrong_count, due_count, pending — все числа >= 0
 ```
 
+### 9б. Сохранение слова из подсказки (learn-word)
+```bash
+# Первый вызов — создаёт запись
+curl -s -X POST "http://localhost:8000/api/v1/vocabulary/learn-word" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"word": "marchewka", "translation": "морковь"}' | \
+  python3 -c "import sys,json; d=json.load(sys.stdin); print('ok:', d['ok'], '| is_new:', d['is_new'], '| vocab_id:', d['vocab_id'])"
+# Ожидаем: ok: True, vocab_id > 0; is_new=True если слово новое для пользователя, False если уже было
+
+# Повторный вызов — idempotent (не дублирует запись)
+curl -s -X POST "http://localhost:8000/api/v1/vocabulary/learn-word" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"word": "marchewka", "translation": "морковь"}' | \
+  python3 -c "import sys,json; d=json.load(sys.stdin); print('is_new on repeat:', d['is_new'])"
+# Ожидаем: is_new: False (запись уже существует, не создаётся дубль)
+
+# Проверить в БД: слово появилось в user_vocabulary с next_review=today
+python3 -c "
+import sqlite3
+from datetime import date
+conn = sqlite3.connect('/home/politrain/politrain_code/backend/politrain.db')
+c = conn.cursor()
+c.execute('''SELECT v.polish, uv.next_review, uv.correct_streak
+             FROM user_vocabulary uv JOIN vocabulary v ON v.id=uv.vocab_id
+             WHERE uv.user_id=2 AND v.polish='marchewka' ''')
+print('marchewka in user vocab:', c.fetchone())
+"
+# Ожидаем: ('marchewka', '<сегодня>', 0) — correct_streak=0 значит пойдёт в очередь на изучение
+```
+
 ### 10. Топик-упражнения (освоенные должны быть исключены)
 ```bash
 curl -s "http://localhost:8000/api/v1/topics/accusative/lesson" -H "Authorization: Bearer $TOKEN" | \
@@ -449,7 +479,11 @@ backend/
                      POST /training/session-complete — накопление total_training_seconds + ачивки,
                      POST /training/session-rating — оценка сессии 1-5 + комментарий + список exercise_ids)
     topics.py      — темы, уроки, упражнения по темам
-    vocabulary.py  — статистика словаря (/vocabulary/stats)
+    vocabulary.py  — статистика словаря (/vocabulary/stats);
+                     POST /vocabulary/learn-word — добавляет слово в словарь пользователя из подсказки:
+                       body: {word: str, translation: str}; находит или создаёт Vocabulary (polish, translation_ru, level=user.level),
+                       создаёт UserVocabulary если не существует (next_review=today → доступно для повторения сразу);
+                       возвращает {ok, vocab_id, is_new}
     admin.py       — жалобы, пользователи, статистика (только ADMIN_USERNAME);
                      GET /admin/mistral-usage?days=30 — расход Mistral API: по дням (large/small стэк),
                        по purpose, по user_id; поля: calls, input_tokens, output_tokens, cost_usd
@@ -547,7 +581,13 @@ frontend/src/
   pages/           — TrainingPage, TrainingSessionPage, AdminPage, ProfilePage,
                      DashboardPage, ChatPage, ...
   components/
-    training/      — FillBlank, MultipleChoice, Flashcard, WordOrder, JudgeSentence, TranslatePhrase, LetterTilesBlank, WordDefinition
+    training/      — FillBlank, MultipleChoice, Flashcard, WordOrder, JudgeSentence, TranslatePhrase, LetterTilesBlank, WordDefinition;
+                     WordHintText — универсальный компонент: подчёркивает польские слова из `exercise.word_hints`, по клику показывает перевод;
+                       проп `saveToVocab` (boolean) — автоматически сохраняет кликнутое слово через POST /vocabulary/learn-word (fire-and-forget), показывает 📚 в тултипе;
+                       проп `onHintUsed` — вызывается при первом клике для -1 XP отслеживания;
+                       saveToVocab=true у: FillBlank, MultipleChoice, JudgeSentence, LetterTilesBlank, WordDefinition;
+                       TranslatePhrase — без saveToVocab (word_hints там русские→польские, инвертировано для vocab модели);
+                       WordOrder — без WordHintText (UI чипов, не текст)
     ui/            — Button, Card, Input, ProgressBar, Skeleton (animate-pulse заглушки), Markdown (react-markdown wrapper)
     layout/        — Layout с min-w-0 на flex контейнере (важно для mobile); page transitions через key={location.pathname}
     gamification/  — ActivityDashboard: Ring (SVG кольцо цели), WeekChart (7 дней), MonthChart (30 дней), SourceBar (breakdown по источникам);
@@ -622,6 +662,8 @@ frontend/src/
 | Таймер сессии считает время в другой вкладке или приложении | `visibilitychange` не срабатывает при переключении приложений на десктопе (браузер остаётся открытым) | `visibilitychange` + `window.blur`/`window.focus` — оба события вызывают одну `pause()`/`resume()` функцию |
 | Мистраль пишет translation по-английски | Игнорирует `{native_language}` в промте | `_sanitize_native_fields(item, native_language)` — зануляет translation/explanation/hint без кириллицы у ru-пользователей; вызывается при сохранении new/bonus/topic |
 | word_definition раскрывает ответ через производное | "apteka" → вопрос содержит "aptekarz" | `_fix_word_definition_exercise`: stem check — если `c_norm[:-1]` (все кроме последней буквы) есть в вопросе → None; плюс правило Alias в промте |
+| word_hints не кликаются в упражнении | Тип упражнения не использует WordHintText | FillBlank, MultipleChoice, JudgeSentence, LetterTilesBlank, WordDefinition — WordHintText с saveToVocab; TranslatePhrase — WordHintText без saveToVocab; WordOrder — без WordHintText (чипы) |
+| learn-word дублирует слова | Повторные клики → несколько UserVocabulary записей | Endpoint идемпотентен: проверяет существующую запись перед созданием, возвращает is_new=False |
 | TrainingPage: бонус исчезает | `dailyDone=false` когда today_total=0 | Бонус всегда виден, disabled (div вместо Link) пока дневная не выполнена |
 | TrainingPage статистика показывает нули | `Promise.all` — один упавший запрос обнуляет всё | Заменить на `Promise.allSettled` с индивидуальными проверками `status === 'fulfilled'` |
 | explain не объясняет конкретную ошибку judge_sentence | AI говорит про тему вообще | В system prompt level=1: инструкция "для типа «верно/неверно» укажи КОНКРЕТНОЕ слово/форму" |
