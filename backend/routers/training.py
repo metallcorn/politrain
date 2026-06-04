@@ -149,7 +149,11 @@ def _fix_fill_blank_exercise(item: dict) -> dict | None:
 
 
 def _fix_letter_tiles_exercise(item: dict) -> dict | None:
-    """Validate letter_tiles: must have one ___, single-word answer, answer not in question."""
+    """Validate letter_tiles: single-word answer, answer not visible in question.
+    Two valid formats:
+    A) Sentence with exactly one ___ (tests word form in context)
+    B) Spelling question without ___ e.g. 'Напиши по-польски: школа' (tests pure spelling)
+    """
     if item is None or item.get("type") != "letter_tiles":
         return item
     question = item.get("question", "")
@@ -158,8 +162,9 @@ def _fix_letter_tiles_exercise(item: dict) -> dict | None:
         return None
     if " " in correct:
         return None  # multi-word answer can't be assembled from tiles
-    if question.count("___") != 1:
-        return None
+    blank_count = question.count("___")
+    if blank_count > 1:
+        return None  # multiple blanks not supported
     c_norm = _strip(correct)
     q_norm = _strip(question)
     if re.search(r'\b' + re.escape(c_norm) + r'\b', q_norm):
