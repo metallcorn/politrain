@@ -44,7 +44,12 @@ def _validate_type(item: dict) -> dict | None:
 _CYRILLIC_RE = re.compile(r'[а-яёА-ЯЁ]')
 
 def _sanitize_native_fields(item: dict, native_language: str) -> dict:
-    """If native_language expects Cyrillic (ru) but translation/explanation are in Latin, null them out."""
+    """If native_language expects Cyrillic (ru) but translation/explanation are in Latin, null them out.
+    Also nulls out any field that is a dict instead of a string (Mistral sometimes returns nested objects)."""
+    for field in ("translation", "explanation", "hint"):
+        val = item.get(field)
+        if val is not None and not isinstance(val, str):
+            item[field] = None
     if native_language != "ru":
         return item
     for field in ("translation", "explanation", "hint"):
