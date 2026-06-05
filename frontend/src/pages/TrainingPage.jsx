@@ -104,7 +104,7 @@ export default function TrainingPage() {
           : 'Начни изучать слова'
         : '...',
       color: 'border-blue-100 hover:border-blue-300',
-      badge: vocabStats?.due_count > 0 ? vocabStats.due_count : null,
+      badge: null,
     },
     {
       mode: 'practice',

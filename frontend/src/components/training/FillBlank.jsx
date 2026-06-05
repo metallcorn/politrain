@@ -65,7 +65,7 @@ export default function FillBlank({ exercise, onAnswer, result, loading }) {
         )}
         {exercise.translation && <p className="text-sm text-gray-500 mt-1 italic">{exercise.translation}</p>}
         {hasHints && !submitted && (
-          <p className="text-xs text-gray-400 mt-2">Нажми на слово — увидишь перевод{hintUsed ? ' (−1 XP)' : ' (−1 XP за использование)'}</p>
+          <p className="text-xs text-gray-400 mt-2">Подчёркнутые слова — нажми для перевода{hintUsed ? ' (−1 XP)' : ' (−1 XP)'}</p>
         )}
       </div>
 

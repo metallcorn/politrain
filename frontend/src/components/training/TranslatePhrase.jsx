@@ -30,7 +30,7 @@ export default function TranslatePhrase({ exercise, onAnswer, result, loading })
           className="text-xl font-semibold text-gray-800 leading-relaxed"
         />
         {hasHints && !submitted && (
-          <p className="text-xs text-gray-400 mt-2">Нажми на подчёркнутое слово — увидишь перевод{hintUsed ? ' (−1 XP)' : ' (−1 XP за использование)'}</p>
+          <p className="text-xs text-gray-400 mt-2">Подчёркнутые слова — нажми для перевода (−1 XP)</p>
         )}
       </div>
 

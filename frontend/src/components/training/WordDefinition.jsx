@@ -37,7 +37,7 @@ export default function WordDefinition({ exercise, onAnswer, result, loading }) 
           className="text-lg font-medium text-gray-800 leading-relaxed"
         />
         {hasHints && !submitted && (
-          <p className="text-xs text-gray-400 mt-2">Нажми на подчёркнутое слово — увидишь перевод</p>
+          <p className="text-xs text-gray-400 mt-2">Подчёркнутые слова — нажми для перевода</p>
         )}
         {exercise.hint && !submitted && (
           hintShown

@@ -7,6 +7,7 @@ function normalize(str) {
     .trim()
     .replace(/ё/g, 'е')
     .replace(/[.,!?;:«»"'()[\]]/g, '')
+    .replace(/-/g, ' ')
     .replace(/\s+/g, ' ')
 }
 

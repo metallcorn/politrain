@@ -74,7 +74,7 @@ export default function LetterTilesBlank({ exercise, onAnswer, result, loading }
           <p className="text-sm text-gray-400 mt-1 italic">{exercise.translation}</p>
         )}
         {hasHints && !submitted && (
-          <p className="text-xs text-gray-400 mt-1">Нажми на подчёркнутое слово — увидишь перевод</p>
+          <p className="text-xs text-gray-400 mt-1">Подчёркнутые слова — нажми для перевода</p>
         )}
         {exercise.hint && !submitted && (
           hintShown
@@ -112,7 +112,7 @@ export default function LetterTilesBlank({ exercise, onAnswer, result, loading }
             key={tile.id}
             onClick={() => place(tile)}
             disabled={submitted}
-            className={`${tileBase} bg-white border-gray-200 text-gray-800 hover:border-primary-400 hover:bg-primary-50 disabled:opacity-40`}
+            className={`${tileBase} bg-primary-50 border-primary-300 text-primary-800 hover:bg-primary-100 hover:border-primary-500 disabled:opacity-40`}
           >
             {tile.letter}
           </button>

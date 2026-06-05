@@ -42,7 +42,7 @@ export default function JudgeSentence({ exercise, onAnswer, result, loading }) {
           className="text-xl font-semibold text-gray-900 leading-relaxed"
         />
         {hasHints && !chosen && (
-          <p className="text-xs text-gray-400 mt-2">Нажми на подчёркнутое слово — увидишь перевод</p>
+          <p className="text-xs text-gray-400 mt-2">Подчёркнутые слова — нажми для перевода</p>
         )}
         {exercise.translation && !result && (
           translationShown

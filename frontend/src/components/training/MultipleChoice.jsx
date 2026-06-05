@@ -38,7 +38,7 @@ export default function MultipleChoice({ exercise, onAnswer, result }) {
               </button>
         )}
         {hasHints && !selected && (
-          <p className="text-xs text-gray-400 mt-2">Нажми на подчёркнутое слово — увидишь перевод</p>
+          <p className="text-xs text-gray-400 mt-2">Подчёркнутые слова — нажми для перевода</p>
         )}
       </div>
 
