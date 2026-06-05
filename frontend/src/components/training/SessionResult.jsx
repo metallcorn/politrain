@@ -163,6 +163,11 @@ export default function SessionResult({ correct, total, xpEarned, streak, mode, 
             <Sparkles size={16} />
             Повторить тему
           </Button>
+        ) : mode === 'errors' ? (
+          <Button className="flex-1" onClick={() => navigate(`/training/session?mode=errors&t=${Date.now()}`)}>
+            <Sparkles size={16} />
+            Ещё ошибки
+          </Button>
         ) : (
           <Button className="flex-1" onClick={() => navigate(`/training/session?mode=bonus&t=${Date.now()}`)}>
             <Sparkles size={16} />

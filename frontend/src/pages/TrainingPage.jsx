@@ -100,7 +100,7 @@ export default function TrainingPage() {
       description: 'Учи польские слова — карточки с переводом',
       count: vocabStats
         ? vocabStats.known_count > 0
-          ? `${vocabStats.known_count} слов знаешь${vocabStats.due_count > 0 ? ` · ${vocabStats.due_count} на повторение` : ''}`
+          ? `${vocabStats.known_count} слов знаешь`
           : 'Начни изучать слова'
         : '...',
       color: 'border-blue-100 hover:border-blue-300',
