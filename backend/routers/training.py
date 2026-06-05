@@ -1046,7 +1046,8 @@ async def submit_answer(
             try:
                 content = json.loads(de.content)
                 correct_answer = content.get("correct_answer", "")
-                explanation = content.get("explanation")
+                raw_expl = content.get("explanation")
+                explanation = raw_expl if isinstance(raw_expl, str) else None
                 ex_type = content.get("type", "")
 
                 if ex_type == "translate":
