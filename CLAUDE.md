@@ -13,7 +13,7 @@ AI-тренажёр польского языка. FastAPI + SQLite бэкенд
 
 - **Backend**: FastAPI, SQLAlchemy, SQLite (`backend/politrain.db`), Pydantic v2
 - **Frontend**: React 18, Vite, Tailwind CSS, Zustand, Axios (`baseURL: '/api/v1'`)
-- **AI**: Mistral API — `mistral-large-latest` для генерации упражнений (до 7 параллельных батчей: N grammar per-topic + N lexical per-topic + 3 глобальных judge/tiles/word_def, timeout=60с, fallback → small), `mistral-small-latest` только для словаря; каждый вызов логируется в `mistral_call_logs` с токенами и duration
+- **AI**: Mistral API — `mistral-large-latest` для генерации упражнений (до 7 батчей через asyncio.gather, НО ограничены `_API_SEMAPHORE=3` одновременными вызовами во избежание rate limit; timeout=60с, fallback → small), `mistral-small-latest` только для словаря; каждый вызов логируется в `mistral_call_logs` с токенами, duration и `error_message`
 - **PWA**: `vite-plugin-pwa` + Workbox service worker; иконки из `public/icon.svg` через `@vite-pwa/assets-generator`; HTTPS на `politrain.metallcorn.online` (Let's Encrypt); autoUpdate режим
 - **Деплой**: nginx reverse proxy (`proxy_read_timeout 90s` — обязательно!), uvicorn, systemd (сервис не настроен — запускается вручную)
 
@@ -334,6 +334,19 @@ print('purposes:', list(d.get('by_purpose',{}).keys())[:5])
 print('days:', len(d.get('days',[])))
 "
 # Проверяем: calls > 0 если бэкенд использовался, cost_usd >= 0
+
+# Проверка ошибок Mistral (rate limit, timeout, etc.)
+python3 -c "
+import sqlite3
+conn = sqlite3.connect('/home/politrain/politrain_code/backend/politrain.db')
+c = conn.cursor()
+c.execute('SELECT COUNT(*) FROM mistral_call_logs WHERE success=0')
+print('failed calls:', c.fetchone()[0])
+c.execute('SELECT model, error_message, COUNT(*) FROM mistral_call_logs WHERE success=0 AND error_message IS NOT NULL GROUP BY error_message ORDER BY COUNT(*) DESC LIMIT 5')
+for r in c.fetchall(): print(f'  {r[0]}: {r[1][:60]} ({r[2]}x)')
+"
+# Ожидаем: error_message показывает конкретные причины (HTTP 429, timeout, ConnectionError)
+# Если много 429 — rate limit; если timeout — Mistral медленный; если Connection — сеть
 ```
 
 ### 14б. Тематическая генерация (topic-tagged new/bonus)
@@ -498,7 +511,9 @@ backend/
                      GET /profile/leaderboard — таблица лидеров: ±5 пользователей по xp_today, my_rank, total_users
     chat.py        — чат с AI собеседником
   services/
-    mistral.py     — обёртка над Mistral API
+    mistral.py     — обёртка над Mistral API;
+                     `_API_SEMAPHORE = asyncio.Semaphore(3)` — максимум 3 параллельных вызова (защита от rate limit при 7 батчах);
+                     `_log_call()` пишет model/purpose/tokens/duration/success/**error_message** в mistral_call_logs через raw sqlite3
     gamification.py — XP, стрики, достижения;
                        XP_RANKS — 25 рангов (Новичок I→Эксперт V, 0→128000 XP);
                        XP_CORRECT=10, XP_INCORRECT=2, XP_VOCAB=5 (SRS-карточки), vocab source="vocab" → 0 XP;
@@ -537,8 +552,9 @@ backend/
 - `UserKnownExpression` — идиомы/фразы которые пользователь знает (из flashcard quality≥4 без vocab_id), drilled_at
 - `SessionRating` — оценка сессии пользователем: rating (1-5, nullable), comment, mode, exercise_ids (JSON), created_at
   - Сохраняется через `POST /training/session-rating`; rating необязателен — если не выставил, запись не создаётся
-- `MistralCallLog` — лог каждого вызова Mistral API: model, purpose, user_id, input_tokens, output_tokens, success, duration_ms, created_at
+- `MistralCallLog` — лог каждого вызова Mistral API: model, purpose, user_id, input_tokens, output_tokens, success, duration_ms, **error_message**, created_at
   - Пишется через прямой sqlite3 (не ORM) в `services/mistral.py → _log_call()`; INSERT явно передаёт `datetime('now')` (ORM default не работает для raw sqlite)
+  - `error_message` содержит текст ошибки: `"HTTP 429: ..."`, `"timeout after Xms"`, `"ConnectionError: ..."` — для диагностики причин fallback
 
 ### Логика словаря
 - `correct_streak >= 1` → слово "знакомо", считается в vocab_count
@@ -601,6 +617,7 @@ frontend/src/
 - `is_admin` вычисляется сервером в `/auth/me`, сравнивая username с `ADMIN_USERNAME` из env
 - Mobile layout: flex-контейнер должен иметь `min-w-0` иначе вылезает за экран
 - Таймаут сессии: bonus/new/daily/topic = **85с**, остальные = 30с (Mistral до 60с + nginx 90с)
+- Экран загрузки bonus/daily/new/topic: `GEN_STEPS` — массив из 5 шагов ("Выбираем темы..." → "Генерируем грамматику..." → ...) с progress bar; `loadStep` индекс обновляется по таймеру вместе с `loadProgress`
 - При ошибке загрузки сессии — экран с кнопкой "Попробовать снова" (loadError state), не SessionResult 0/0
 - IdiomCard (flashcard без vocab_id): autoAdvance=true — переход сразу после выбора "Знал/Не знал" без кнопки "Далее"
 - Анимации в `index.css`: animate-shake (неверный ответ), animate-slide-in (новое задание), animate-float-up (XP float), animate-bounce-in (результат), animate-fade-in (страница/хинт), animate-scale-in
@@ -610,7 +627,7 @@ frontend/src/
 - AI-объяснение: кнопка "Объяснить подробнее" → `POST /training/explain` (level=1), кнопка "Расскажи подробнее" → level=2; оба кешируются в AIExplanationCache
 - Таймер сессии: `startTimeRef` запускается когда упражнения загружены (не во время ожидания Мистраля); по завершении → `POST /training/session-complete`
 - Активное время в таймере: `visibilitychange` API — пауза при скрытии вкладки, возобновление при возврате; `activeTimeRef` + `lastVisibleRef`
-- SessionResult кнопка "продолжить": mode-aware — vocab → "Ещё слова", topic → "Повторить тему", else → "Ещё задания"
+- SessionResult кнопка "продолжить": mode-aware — vocab → "Ещё слова", topic → "Повторить тему", errors → "Ещё ошибки", else → "Ещё задания"
 - LetterTilesBlank перемешивание: Fisher-Yates (не `sort(() => Math.random() - 0.5)` — тот даёт неравномерный результат)
 - LetterTilesBlank показывает `exercise.translation` под вопросом (серый курсив)
 - SessionResult: звёздный рейтинг 1-5 + опциональный комментарий → `POST /training/session-rating`; exerciseIds передаются из TrainingSessionPage
@@ -694,3 +711,10 @@ frontend/src/
 | Упражнения без темы в пуле | Старые записи сгенерированы без topic_id (до _batch_for_topic_lexical и round-robin для global) | Деактивировать через is_active=0; пул заполнится заново с правильными темами |
 | AI объяснение остаётся от прошлого задания | handleSkip/handleReportSubmit не сбрасывали aiTexts/aiOpen; плюс race condition если fetchAiLevel отвечал после навигации | resetAiState() в handleSkip/handleReportSubmit + nonce ref в fetchAiLevel для discard stale responses |
 | Нет темы у judge/tiles/word_def | Убрали round-robin когда добавили per-topic лексические батчи | Восстановили round-robin для global батчей (judge/tiles/word_def); badge показывается для всех типов где есть topic_title |
+| Mistral rate limit при 7 параллельных батчах | Все вызовы large-latest падают одновременно (200-400ms, tokens=0) → fallback small генерирует хуже | `_API_SEMAPHORE=asyncio.Semaphore(3)` в mistral.py — максимум 3 одновременных вызова |
+| Причина fallback неизвестна | mistral_call_logs.success=0 без деталей | `error_message` колонка: `"HTTP 429: ..."`, `"timeout after Xms"` — смотреть через admin/mistral-usage |
+| flashcard с одиночным словом/буквой | Mistral генерит flashcard для "ą", "żółty" вместо идиом | `_fix_flashcard_exercise`: len(question.split()) < 2 → None |
+| judge_sentence false без explanation | Пользователь не понимает почему неверно | `_fix_judge_sentence_exercise`: correct_answer=="false" AND not explanation → None |
+| explanation — dict вместо строки | Старые упражнения с `{"literal":..., "real":...}` → Pydantic 500 при ответе | `_sanitize_native_fields` нулит нестроковые поля; answer handler: `isinstance(raw_expl, str)` guard |
+| completed_at=NULL у старых ошибок | Колонка добавлена позже → ошибки невидимы в errors mode (фильтр IS NOT NULL) | Бэкфилл: `UPDATE daily_exercises SET completed_at=datetime(date\|\|' 12:00:00') WHERE is_completed=1 AND completed_at IS NULL` |
+| Flashcard VocabCard не принимает ответ с дефисом | normalize() не убирает дефисы → "интернет-магазин" ≠ "интернет магазин" | В Flashcard.jsx normalize добавлен `.replace(/-/g, ' ')` |
