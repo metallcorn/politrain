@@ -11,15 +11,20 @@ MISTRAL_API_URL = "https://api.mistral.ai/v1/chat/completions"
 MISTRAL_MODEL = os.getenv("MISTRAL_MODEL", "mistral-large-latest")
 _DB_PATH = os.path.join(os.path.dirname(__file__), "..", "politrain.db")
 
+# Limit concurrent Mistral calls to avoid rate limiting when many batches fire at once
+_API_SEMAPHORE = asyncio.Semaphore(3)
+
 
 def _log_call(model: str, purpose: str | None, user_id: int | None,
-              input_tokens: int, output_tokens: int, success: bool, duration_ms: int):
+              input_tokens: int, output_tokens: int, success: bool, duration_ms: int,
+              error_message: str | None = None):
     try:
         conn = sqlite3.connect(_DB_PATH)
         conn.execute(
-            "INSERT INTO mistral_call_logs (created_at, model, purpose, user_id, input_tokens, output_tokens, success, duration_ms) "
-            "VALUES (datetime('now'), ?, ?, ?, ?, ?, ?, ?)",
-            (model, purpose, user_id, input_tokens, output_tokens, int(success), duration_ms),
+            "INSERT INTO mistral_call_logs "
+            "(created_at, model, purpose, user_id, input_tokens, output_tokens, success, duration_ms, error_message) "
+            "VALUES (datetime('now'), ?, ?, ?, ?, ?, ?, ?, ?)",
+            (model, purpose, user_id, input_tokens, output_tokens, int(success), duration_ms, error_message),
         )
         conn.commit()
         conn.close()
@@ -52,45 +57,58 @@ async def chat_completion(
         "max_tokens": max_tokens,
     }
 
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        for attempt in range(retries):
-            t0 = time.monotonic()
-            try:
-                response = await client.post(MISTRAL_API_URL, json=payload, headers=headers)
-                response.raise_for_status()
-                data = response.json()
-                duration_ms = int((time.monotonic() - t0) * 1000)
-                usage = data.get("usage", {})
-                choice = data["choices"][0]
-                finish_reason = choice.get("finish_reason")
-                content = choice["message"]["content"]
-                if finish_reason == "content_filter" or (
-                    isinstance(content, str) and "blocked by content filtering" in content.lower()
-                ):
-                    _log_call(used_model, purpose, user_id, 0, 0, False, duration_ms)
-                    raise RuntimeError("content_filter")
-                _log_call(used_model, purpose, user_id,
-                          usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0),
-                          True, duration_ms)
-                return content
-            except httpx.TimeoutException:
-                _log_call(used_model, purpose, user_id, 0, 0, False,
-                          int((time.monotonic() - t0) * 1000))
-                if attempt == retries - 1:
+    async with _API_SEMAPHORE:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            for attempt in range(retries):
+                t0 = time.monotonic()
+                try:
+                    response = await client.post(MISTRAL_API_URL, json=payload, headers=headers)
+                    response.raise_for_status()
+                    data = response.json()
+                    duration_ms = int((time.monotonic() - t0) * 1000)
+                    usage = data.get("usage", {})
+                    choice = data["choices"][0]
+                    finish_reason = choice.get("finish_reason")
+                    content = choice["message"]["content"]
+                    if finish_reason == "content_filter" or (
+                        isinstance(content, str) and "blocked by content filtering" in content.lower()
+                    ):
+                        _log_call(used_model, purpose, user_id, 0, 0, False, duration_ms,
+                                  "content_filter")
+                        raise RuntimeError("content_filter")
+                    _log_call(used_model, purpose, user_id,
+                              usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0),
+                              True, duration_ms)
+                    return content
+                except httpx.TimeoutException as e:
+                    duration_ms = int((time.monotonic() - t0) * 1000)
+                    _log_call(used_model, purpose, user_id, 0, 0, False, duration_ms,
+                              f"timeout after {duration_ms}ms")
+                    if attempt == retries - 1:
+                        raise
+                except httpx.HTTPStatusError as e:
+                    duration_ms = int((time.monotonic() - t0) * 1000)
+                    err_body = ""
+                    try:
+                        err_body = e.response.text[:200]
+                    except Exception:
+                        pass
+                    _log_call(used_model, purpose, user_id, 0, 0, False, duration_ms,
+                              f"HTTP {e.response.status_code}: {err_body}")
+                    status = e.response.status_code
+                    if attempt < retries - 1:
+                        if status == 429:
+                            await asyncio.sleep(2 ** (attempt + 1))
+                            continue
+                        if status >= 500:
+                            await asyncio.sleep(1)
+                            continue
                     raise
-            except httpx.HTTPStatusError as e:
-                _log_call(used_model, purpose, user_id, 0, 0, False,
-                          int((time.monotonic() - t0) * 1000))
-                status = e.response.status_code
-                if attempt < retries - 1:
-                    if status == 429:
-                        # Rate limited — wait before retrying (2s, 4s, 8s)
-                        await asyncio.sleep(2 ** (attempt + 1))
-                        continue
-                    if status >= 500:
-                        await asyncio.sleep(1)
-                        continue
-                raise
+                except Exception as e:
+                    duration_ms = int((time.monotonic() - t0) * 1000)
+                    _log_call(used_model, purpose, user_id, 0, 0, False, duration_ms,
+                              f"{type(e).__name__}: {str(e)[:200]}")
+                    raise
 
     raise RuntimeError("Failed after retries")
 

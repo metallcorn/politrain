@@ -38,6 +38,7 @@ export default function TrainingSessionPage() {
   const [dailyAlreadyDone, setDailyAlreadyDone] = useState(false)
   const [allVocabDone, setAllVocabDone] = useState(false)
   const [loadProgress, setLoadProgress] = useState(0)
+  const [loadStep, setLoadStep] = useState(0)
   const [loadError, setLoadError] = useState(false)
   const [xpFloat, setXpFloat] = useState(null)
   const [aiOpen, setAiOpen] = useState(false)
@@ -74,14 +75,27 @@ export default function TrainingSessionPage() {
     }
   }, [])
 
+  const GEN_STEPS = [
+    'Выбираем темы для тебя...',
+    'Генерируем грамматические задания...',
+    'Создаём лексические упражнения...',
+    'Составляем задания на перевод...',
+    'Финальная проверка качества...',
+  ]
+
   useEffect(() => {
     if (!loading) return
     setLoadProgress(0)
+    setLoadStep(0)
     const duration = mode === 'daily' ? 55000 : 25000
     const interval = 200
-    const step = (interval / duration) * 90 // advance to 90% max while waiting
+    const step = (interval / duration) * 90
+    const stepInterval = duration / GEN_STEPS.length
+    let elapsed = 0
     const timer = setInterval(() => {
+      elapsed += interval
       setLoadProgress((p) => Math.min(p + step, 90))
+      setLoadStep(Math.min(Math.floor(elapsed / stepInterval), GEN_STEPS.length - 1))
     }, interval)
     return () => clearInterval(timer)
   }, [loading, mode])
@@ -249,103 +263,60 @@ export default function TrainingSessionPage() {
   }
 
   if (loading) {
-    if (mode === 'bonus') {
-      return (
-        <div className="flex flex-col items-center gap-6 py-12 text-center px-4">
-          <div className="w-20 h-20 rounded-full bg-purple-50 flex items-center justify-center">
-            <Brain size={40} className="text-purple-500 animate-pulse" />
-          </div>
-          <div>
-            <h2 className="text-xl font-bold text-gray-900">Генерируем задания</h2>
-            <p className="text-gray-500 text-sm mt-2 leading-relaxed">
-              Анализируем твои ответы, учитываем ошибки<br/>и подбираем упражнения под твой уровень
-            </p>
-          </div>
-          <div className="flex flex-col gap-2 text-sm text-gray-400 w-full max-w-xs">
-            <div className="flex items-center gap-2">
-              <Sparkles size={14} className="text-purple-400 flex-shrink-0" />
-              <span>Подбираем сложность по последним результатам</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Sparkles size={14} className="text-purple-400 flex-shrink-0" />
-              <span>Исключаем задания с отмеченными ошибками</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Sparkles size={14} className="text-purple-400 flex-shrink-0" />
-              <span>Создаём новые упражнения специально для тебя</span>
-            </div>
-          </div>
-          <Spinner />
+    const GenLoader = ({ icon, color, title, subtitle }) => (
+      <div className="flex flex-col items-center gap-6 py-12 text-center px-4">
+        <div className={`w-20 h-20 rounded-full ${color.bg} flex items-center justify-center`}>
+          <span className={color.icon}>{icon}</span>
         </div>
-      )
+        <div>
+          <h2 className="text-xl font-bold text-gray-900">{title}</h2>
+          <p className="text-gray-500 text-sm mt-2">{subtitle}</p>
+        </div>
+        <div className="w-full max-w-xs">
+          <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+            <div className={`h-full ${color.bar} rounded-full transition-all duration-200 ease-out`}
+              style={{ width: `${loadProgress}%` }} />
+          </div>
+        </div>
+        <p className="text-sm text-gray-400 animate-pulse min-h-5">
+          {GEN_STEPS[loadStep]}
+        </p>
+      </div>
+    )
+
+    if (mode === 'bonus') {
+      return <GenLoader
+        icon={<Brain size={40} className="text-purple-500 animate-pulse" />}
+        color={{ bg: 'bg-purple-50', icon: '', bar: 'bg-purple-500' }}
+        title="Генерируем задания"
+        subtitle="Анализируем ответы, учитываем ошибки — создаём сложнее"
+      />
     }
     if (mode === 'daily') {
-      return (
-        <div className="flex flex-col items-center gap-6 py-12 text-center px-4">
-          <div className="w-20 h-20 rounded-full bg-primary-50 flex items-center justify-center">
-            <CalendarDays size={40} className="text-primary-600 animate-pulse" />
-          </div>
-          <div>
-            <h2 className="text-xl font-bold text-gray-900">Готовим дневные задания</h2>
-            <p className="text-gray-500 text-sm mt-2 leading-relaxed">
-              Собираем персональную подборку упражнений<br/>на сегодня
-            </p>
-          </div>
-          <div className="w-full max-w-xs">
-            <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-primary-500 rounded-full transition-all duration-200 ease-out"
-                style={{ width: `${loadProgress}%` }}
-              />
-            </div>
-          </div>
-          <div className="flex flex-col gap-2 text-sm text-gray-400 w-full max-w-xs">
-            <div className="flex items-center gap-2">
-              <Sparkles size={14} className="text-primary-400 flex-shrink-0" />
-              <span>Учитываем твой уровень и слабые места</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Sparkles size={14} className="text-primary-400 flex-shrink-0" />
-              <span>Добавляем повторение пройденных тем</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Sparkles size={14} className="text-primary-400 flex-shrink-0" />
-              <span>Генерируем свежие живые примеры</span>
-            </div>
-          </div>
-        </div>
-      )
+      return <GenLoader
+        icon={<CalendarDays size={40} className="text-primary-600 animate-pulse" />}
+        color={{ bg: 'bg-primary-50', icon: '', bar: 'bg-primary-500' }}
+        title="Готовим дневные задания"
+        subtitle="Собираем персональную подборку на сегодня"
+      />
     }
     if (mode === 'new') {
-      return (
-        <div className="flex flex-col items-center gap-6 py-12 text-center px-4">
-          <div className="w-20 h-20 rounded-full bg-yellow-50 flex items-center justify-center">
-            <Sparkles size={40} className="text-yellow-500 animate-pulse" />
-          </div>
-          <div>
-            <h2 className="text-xl font-bold text-gray-900">Генерируем новые задания</h2>
-            <p className="text-gray-500 text-sm mt-2 leading-relaxed">
-              Создаём свежие упражнения специально для тебя
-            </p>
-          </div>
-          <div className="flex flex-col gap-2 text-sm text-gray-400 w-full max-w-xs">
-            <div className="flex items-center gap-2">
-              <Sparkles size={14} className="text-yellow-400 flex-shrink-0" />
-              <span>Только новый материал без повторений</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Sparkles size={14} className="text-yellow-400 flex-shrink-0" />
-              <span>Живые разговорные фразы и идиомы</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Sparkles size={14} className="text-yellow-400 flex-shrink-0" />
-              <span>Подбираем темы по твоим интересам</span>
-            </div>
-          </div>
-          <Spinner />
-        </div>
-      )
+      return <GenLoader
+        icon={<Sparkles size={40} className="text-yellow-500 animate-pulse" />}
+        color={{ bg: 'bg-yellow-50', icon: '', bar: 'bg-yellow-500' }}
+        title="Генерируем новые задания"
+        subtitle="Создаём свежие упражнения специально для тебя"
+      />
     }
+    if (mode === 'topic') {
+      return <GenLoader
+        icon={<Brain size={40} className="text-indigo-500 animate-pulse" />}
+        color={{ bg: 'bg-indigo-50', icon: '', bar: 'bg-indigo-500' }}
+        title="Генерируем задания по теме"
+        subtitle={topic ? `Тема: ${topic}` : 'Создаём упражнения по выбранной теме'}
+      />
+    }
+
     if (mode === 'vocab') {
       return (
         <div className="flex flex-col items-center gap-6 py-12 text-center px-4">
@@ -355,20 +326,6 @@ export default function TrainingSessionPage() {
           <div>
             <h2 className="text-xl font-bold text-gray-900">Подбираем слова</h2>
             <p className="text-gray-500 text-sm mt-2">Новые, ошибочные и давно не встречавшиеся</p>
-          </div>
-          <Spinner />
-        </div>
-      )
-    }
-    if (mode === 'topic') {
-      return (
-        <div className="flex flex-col items-center gap-6 py-12 text-center px-4">
-          <div className="w-20 h-20 rounded-full bg-indigo-50 flex items-center justify-center">
-            <Brain size={40} className="text-indigo-500 animate-pulse" />
-          </div>
-          <div>
-            <h2 className="text-xl font-bold text-gray-900">Генерируем тест по правилу</h2>
-            <p className="text-gray-500 text-sm mt-2">Подбираем задания строго по теме статьи</p>
           </div>
           <Spinner />
         </div>
