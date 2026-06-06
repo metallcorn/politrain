@@ -59,6 +59,19 @@ def _sanitize_native_fields(item: dict, native_language: str) -> dict:
     return item
 
 
+def _fix_flashcard_exercise(item: dict) -> dict | None:
+    """Reject flashcards that are single words or letters — only idioms/phrases allowed."""
+    if item.get("type") != "flashcard":
+        return item
+    question = (item.get("question") or "").strip()
+    if not question:
+        return None
+    # Single word or single letter — not an idiom
+    if len(question.split()) < 2:
+        return None
+    return item
+
+
 def _fix_mc_exercise(item: dict) -> dict | None:
     """Ensure multiple_choice correct_answer exactly matches one of the options. Returns None if unfixable."""
     if item.get("type") != "multiple_choice":
@@ -257,6 +270,9 @@ def _fix_judge_sentence_exercise(item: dict) -> dict | None:
     ca = str(item.get("correct_answer", "")).strip().lower()
     if ca in ("true", "false"):
         item["correct_answer"] = ca
+        # Reject false exercises without explanation — user can't learn why it's wrong
+        if ca == "false" and not item.get("explanation"):
+            return None
         return item
     # Try to coerce common variants
     if ca in ("yes", "да", "верно", "правильно", "correct"):
@@ -2068,6 +2084,9 @@ async def _generate_topic_pool(user, topic_obj, db: Session, today, count: int):
         if item is None:
             continue
         item = _fix_fill_blank_exercise(item) if item and item.get("type") == "fill_blank" else item
+        if item is None:
+            continue
+        item = _fix_flashcard_exercise(item) if item else None
         if item is None:
             continue
         item = _fix_judge_sentence_exercise(item) if item else None

@@ -136,7 +136,7 @@ function IdiomCard({ exercise, onAnswer, loading }) {
         className="w-full bg-white rounded-2xl border-2 border-primary-100 flex flex-col items-center justify-center p-8"
         style={{ minHeight: 180 }}
       >
-        <p className="text-xs text-gray-400 mb-2 uppercase tracking-wide">Польская идиома</p>
+        <p className="text-xs text-gray-400 mb-2 uppercase tracking-wide">Польская фраза</p>
         <p className="text-2xl font-bold text-primary-800 text-center">{exercise.question}</p>
         {exercise.hint && !revealed && (
           <p className="text-sm text-gray-400 mt-3 italic">{exercise.hint}</p>
