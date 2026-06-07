@@ -59,15 +59,31 @@ def _sanitize_native_fields(item: dict, native_language: str) -> dict:
     return item
 
 
+_PL_VERB_ENDINGS = re.compile(
+    r'\b\w+(?:ić|yć|ać|eć|ować|nąć|wać|mieć|być|wiedzieć|móc|chcieć|iść|jść)\b'
+    r'|\b(?:mieć|być|robić|wziąć|brać|dać|mówić|pójść|iść|widzieć|wiedzieć|mówi|jest|ma|idzie|robi|'
+    r'ma|mam|masz|jest|są|idę|pójdę|mogę|chcę|wiem)\b',
+    re.IGNORECASE
+)
+
 def _fix_flashcard_exercise(item: dict) -> dict | None:
-    """Reject flashcards that are single words or letters — only idioms/phrases allowed."""
+    """Reject flashcards that are not real idioms/fixed expressions.
+    Valid: multi-word phrases with a verb (mieć muchy w nosie, wziąć byka za rogi).
+    Invalid: single words, adj+noun combos without verb (zielone drzewo, czerwony)."""
     if item.get("type") != "flashcard":
         return item
     question = (item.get("question") or "").strip()
     if not question:
         return None
+    words = question.split()
     # Single word or single letter — not an idiom
-    if len(question.split()) < 2:
+    if len(words) < 2:
+        return None
+    # Two-word adj+noun with no verb is not a fixed expression
+    if len(words) == 2 and not _PL_VERB_ENDINGS.search(question):
+        return None
+    # Three+ words without any verb-like form are likely random phrases too
+    if len(words) <= 3 and not _PL_VERB_ENDINGS.search(question):
         return None
     return item
 
@@ -571,6 +587,18 @@ async def get_training_session(
     count = _session_length_count(prefs)
     today = date.today()
 
+    # Preload topics for enriching exercises that lack topic_title
+    _topics_by_id = {t.id: t for t in db.query(models.Topic).all()}
+
+    def _enrich(content: dict, de) -> dict:
+        """Add topic_title/topic_slug from DE.topic_id if not already in content."""
+        if not content.get("topic_title") and getattr(de, "topic_id", None):
+            t = _topics_by_id.get(de.topic_id)
+            if t:
+                content["topic_title"] = t.title_ru
+                content["topic_slug"] = t.slug
+        return content
+
     exercises = []
 
     if mode == "errors":
@@ -649,6 +677,7 @@ async def get_training_session(
                     content = json.loads(de.content)
                     content["daily_exercise_id"] = de.id
                     content["source"] = "error_ai"
+                    _enrich(content, de)
                     exercises.append(content)
                 except Exception:
                     pass
@@ -708,6 +737,7 @@ async def get_training_session(
                 content = json.loads(de.content)
                 content["daily_exercise_id"] = de.id
                 content["source"] = "new"
+                _enrich(content, de)
                 exercises.append(content)
             except Exception:
                 pass
@@ -737,6 +767,7 @@ async def get_training_session(
                 content = json.loads(de.content)
                 content["daily_exercise_id"] = de.id
                 content["source"] = "bonus"
+                _enrich(content, de)
                 exercises.append(content)
             except Exception:
                 pass
@@ -788,6 +819,7 @@ async def get_training_session(
                     content = json.loads(de.content)
                     content["daily_exercise_id"] = de.id
                     content["source"] = "vocab"
+                    _enrich(content, de)
                     exercises.append(content)
                 except Exception:
                     pass
@@ -923,6 +955,7 @@ async def get_training_session(
                 content = json.loads(de.content)
                 content["daily_exercise_id"] = de.id
                 content["source"] = de.source
+                _enrich(content, de)
                 exercises.append(content)
             except Exception:
                 pass
@@ -946,6 +979,7 @@ async def get_training_session(
                 content = json.loads(de.content)
                 content["daily_exercise_id"] = de.id
                 content["source"] = "practice"
+                _enrich(content, de)
                 exercises.append(content)
             except Exception:
                 pass
@@ -1035,6 +1069,7 @@ async def get_training_session(
                 content = json.loads(de.content)
                 content["daily_exercise_id"] = de.id
                 content["source"] = de.source
+                _enrich(content, de)
                 exercises.append(content)
             except Exception:
                 pass
@@ -1807,13 +1842,17 @@ def _select_topics_for_generation(user, db: Session, n: int = 2) -> list:
         p = progress_by_topic.get(t.id)
         return p.score if p and p.score is not None else 0.0
 
+    # Topics that produce nonsensical exercises (phonetics/alphabet can't be translated/filled-in)
+    _SKIP_GENERATION_SLUGS = {"alphabet", "letters", "pronunciation"}
+
     # Candidate pool: current+below levels, non-done, has explanation
     all_eligible = db.query(models.Topic).filter(
         models.Topic.explanation_ru.isnot(None),
         models.Topic.explanation_ru != "",
         models.Topic.level_required.in_(current_and_below),
     ).all()
-    candidates = [t for t in all_eligible if t.id not in done_ids]
+    candidates = [t for t in all_eligible
+                  if t.id not in done_ids and t.slug not in _SKIP_GENERATION_SLUGS]
 
     # Sort: lower level first, then lower score first (weakest topics get priority)
     candidates.sort(key=lambda t: (_LEVEL_ORDER.index(t.level_required) if t.level_required in _LEVEL_ORDER else 99, _topic_score(t)))
