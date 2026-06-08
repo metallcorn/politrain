@@ -136,7 +136,8 @@ exs=d.get('exercises',[])
 print('count:', len(exs), '| all_vocab_done:', d.get('all_vocab_done'))
 [print(' -', e.get('question'), '->', e.get('correct_answer','')[:30]) for e in exs[:3]]
 "
-# Проверяем: > 0 карточек (flashcard), поля question/correct_answer/vocab_id присутствуют
+# Проверяем: > 0 карточек, поля question/correct_answer/vocab_id присутствуют
+# Тип карточки зависит от correct_streak: <3 → letter_tiles (сборка из букв), ≥3 → flashcard (ввод целиком)
 # Порядок в сессии: ошибочные → на повторение → новые
 # Если all_vocab_done=True — значит пул слов исчерпан; vocab сессия должна вызвать _ensure_vocab_pool автоматически
 # Проверить: если unseen слов < 10 для уровня пользователя → Mistral генерирует новые ДО сборки сессии
@@ -152,6 +153,23 @@ c.execute('''SELECT COUNT(*) FROM vocabulary v WHERE NOT EXISTS
 print('New unseen words for level', level, ':', c.fetchone()[0])
 "
 # Ожидаем: > 10 новых слов; если < 10 — запрос vocab сессии пополнит пул
+```
+
+### 8б. Градуированное изучение слов (буквы → полный ввод)
+```bash
+# Проверить что слова с низким streak идут letter_tiles, с высоким — flashcard
+SECRET=$(grep SECRET_KEY /home/politrain/politrain_code/.env | cut -d= -f2) ; TOKEN=$(python3 -c "import jwt,datetime; print(jwt.encode({'sub':'2','exp':datetime.datetime.now(datetime.timezone.utc)+datetime.timedelta(hours=1)},'$SECRET',algorithm='HS256'))")
+python3 -c "
+import sys; sys.path.insert(0,'/home/politrain/politrain_code/backend')
+from routers.training import _vocab_card_content
+class V:
+    def __init__(s,p,r): s.polish=p;s.translation_ru=r;s.translation_en=r;s.example_sentence='';s.id=1
+for streak in [0,2,3]:
+    print(streak, '→', _vocab_card_content(V('marchewka','морковь'),'review','ru',streak)['type'])
+print('короткое kot →', _vocab_card_content(V('kot','кот'),'new','ru',0)['type'])
+"
+# Ожидаем: streak 0,2 → letter_tiles; streak 3 → flashcard; kot (3 буквы) → flashcard
+# Ответ на letter_tiles vocab правильно → correct_streak+1; неверно → 0 (назад на буквы)
 ```
 
 ### 9. Статистика словаря
@@ -565,6 +583,13 @@ backend/
   - `last_reviewed IS NULL` → свежедобавлено (learn-word/auto-add), ни разу не отвечали → бейдж "✨ Новое слово", в errors НЕ попадает, считается в stats.new_count
   - ВАЖНО: `last_reviewed` ставится при КАЖДОМ ответе на словарную карточку (оба пути answer handler) — без него отличить два состояния нельзя (SM2 при неверном тоже сбрасывает repetitions=0)
 - Ответил неверно в любом режиме → `correct_streak = 0`, `last_reviewed = now` (слово возвращается как ошибка)
+- **Градуированное изучение (word bank → free typing)**: `_vocab_card_content(v, status, lang, streak)` решает форму карточки:
+  - `correct_streak < 3` (`_VOCAB_TILES_GRADUATE`) → `letter_tiles` — собрать слово из перемешанных букв (буквы = подсказка-леса); question="Собери слово по-польски: {перевод}", correct_answer=польское слово
+  - `correct_streak >= 3` → `flashcard` — ввод/припоминание целиком
+  - короткие (<4 букв) и составные (с пробелом) → всегда flashcard (плитки тривиальны/сломаны)
+  - правильно собрал → streak+1 → ближе к полному вводу; ошибся → streak=0 → назад на буквы (автоматически)
+  - применяется в 3 местах: vocab-сессия, daily review (source=review), daily новые слова
+  - answer handler: vocab SRS и _vocab_mode срабатывают для `ex_type in ("flashcard","letter_tiles")` с vocab_id; letter_tiles проверяется реально (`_check_answer`), не self-graded
 - Дневная сессия автоматически добавляет 2 новых слова (source="review")
 - Когда незнакомых слов < 20 → `_ensure_vocab_pool()` генерирует ещё 30 через Мистраля
 - Во избежание повторов: Мистралю передаются последние 60 слов; бэкенд дополнительно дедуплицирует

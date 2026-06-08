@@ -393,6 +393,38 @@ def _eligible_vocab_levels(user_level: str) -> list:
     idx = _LEVEL_ORDER.index(user_level) if user_level in _LEVEL_ORDER else 2
     return _LEVEL_ORDER[:idx + 1]
 
+
+# Vocab learning scaffold: words still being learned are assembled from letter tiles
+# (the letters act as a visible hint); once the user assembles/answers them correctly
+# this many times in a row (correct_streak), they graduate to full free-typing.
+# A wrong answer resets correct_streak to 0 → the word drops back to letter tiles.
+_VOCAB_TILES_GRADUATE = 3
+
+def _vocab_card_content(v, status: str, native_language: str, correct_streak: int) -> dict:
+    """Build a vocab exercise dict — letter_tiles (scaffold) while learning, flashcard once mastered.
+    Short (<4 chars) or multi-word entries always stay a flashcard (tiles would be trivial/broken)."""
+    translation = getattr(v, f"translation_{native_language}", v.translation_en)
+    word = (v.polish or "").strip()
+    use_tiles = (correct_streak or 0) < _VOCAB_TILES_GRADUATE and " " not in word and len(word) >= 4
+    if use_tiles:
+        return {
+            "type": "letter_tiles",
+            "question": f"Собери слово по-польски: {translation}",
+            "correct_answer": v.polish,
+            "translation": None,
+            "vocab_id": v.id,
+            "vocab_status": status,
+        }
+    return {
+        "type": "flashcard",
+        "question": v.polish,
+        "correct_answer": translation,
+        "translation": translation,
+        "example_sentence": v.example_sentence,
+        "vocab_id": v.id,
+        "vocab_status": status,
+    }
+
 def _next_level(level: str) -> str:
     try:
         idx = _LEVEL_ORDER.index(level)
@@ -914,19 +946,14 @@ async def get_training_session(
                 return {"exercises": [], "mode": "vocab", "total": 0, "all_vocab_done": True, "daily_done": False}
 
             for v in vocab_to_show:
-                content_dict = {
-                    "type": "flashcard",
-                    "question": v.polish,
-                    "correct_answer": getattr(v, f"translation_{current_user.native_language}", v.translation_en),
-                    "translation": getattr(v, f"translation_{current_user.native_language}", v.translation_en),
-                    "example_sentence": v.example_sentence,
-                    "vocab_id": v.id,
-                    "vocab_status": vocab_status.get(v.id, "new"),
-                }
+                uv = all_uvs.get(v.id)
+                streak = uv.correct_streak if uv else 0
+                status = vocab_status.get(v.id, "new")
+                content_dict = _vocab_card_content(v, status, current_user.native_language, streak)
                 de = models.DailyExercise(
                     user_id=current_user.id,
                     date=today,
-                    exercise_type="flashcard",
+                    exercise_type=content_dict["type"],
                     content=json.dumps(content_dict, ensure_ascii=False),
                     source="vocab",
                 )
@@ -1131,11 +1158,11 @@ async def submit_answer(
                 de.is_correct = is_correct
                 de.completed_at = datetime.utcnow()
 
-                # XP mode for vocab flashcards
+                # XP mode for vocab cards (flashcard OR letter_tiles tied to a vocab word)
                 if de.source == "vocab":
-                    _vocab_mode = "vocab_session"  # VocabCard type-and-check — small XP
-                elif ex_type == "flashcard" and content.get("vocab_id"):
-                    _vocab_mode = "reduced"   # SRS vocab — easier than exercises
+                    _vocab_mode = "vocab_session"  # vocab session — small XP
+                elif ex_type in ("flashcard", "letter_tiles") and content.get("vocab_id"):
+                    _vocab_mode = "reduced"   # SRS vocab in daily review — easier than exercises
 
                 # SRS scheduling for AI exercises
                 if de.source in ("new", "bonus", "review_ai"):
@@ -1232,8 +1259,8 @@ async def submit_answer(
                             content_hash=c_hash,
                         ))
 
-                # Update SRS for vocabulary flashcards (any mode with vocab_id)
-                if ex_type == "flashcard" and content.get("vocab_id"):
+                # Update SRS for vocabulary cards (flashcard OR letter_tiles tied to a vocab word)
+                if ex_type in ("flashcard", "letter_tiles") and content.get("vocab_id"):
                     uv = db.query(models.UserVocabulary).filter(
                         models.UserVocabulary.user_id == current_user.id,
                         models.UserVocabulary.vocab_id == content["vocab_id"],
@@ -2399,17 +2426,10 @@ async def _generate_daily_pool(user, db: Session, today, count: int):
 
     for uv in due_vocab:
         v = uv.vocab
-        content = json.dumps({
-            "type": "flashcard",
-            "question": v.polish,
-            "correct_answer": getattr(v, f"translation_{user.native_language}", v.translation_en),
-            "translation": getattr(v, f"translation_{user.native_language}", v.translation_en),
-            "example_sentence": v.example_sentence,
-            "vocab_id": v.id,
-        })
+        card = _vocab_card_content(v, "review", user.native_language, uv.correct_streak or 0)
         entries.append(models.DailyExercise(
-            user_id=user.id, date=today, exercise_type="flashcard",
-            content=content, source="review",
+            user_id=user.id, date=today, exercise_type=card["type"],
+            content=json.dumps(card, ensure_ascii=False), source="review",
         ))
 
     # Add 2 brand-new vocabulary words to daily pool (words user has never encountered)
@@ -2421,17 +2441,10 @@ async def _generate_daily_pool(user, db: Session, today, count: int):
         models.Vocabulary.id.notin_(seen_vocab_ids) if seen_vocab_ids else True,
     ).limit(2).all()
     for v in new_vocab_words:
-        content = json.dumps({
-            "type": "flashcard",
-            "question": v.polish,
-            "correct_answer": getattr(v, f"translation_{user.native_language}", v.translation_en),
-            "translation": getattr(v, f"translation_{user.native_language}", v.translation_en),
-            "example_sentence": v.example_sentence,
-            "vocab_id": v.id,
-        }, ensure_ascii=False)
+        card = _vocab_card_content(v, "new", user.native_language, 0)  # brand-new → streak 0 → tiles
         entries.append(models.DailyExercise(
-            user_id=user.id, date=today, exercise_type="flashcard",
-            content=content, source="vocab",
+            user_id=user.id, date=today, exercise_type=card["type"],
+            content=json.dumps(card, ensure_ascii=False), source="vocab",
         ))
 
     # Pool-first: serve unseen exercises from shared pool, generate only the deficit
