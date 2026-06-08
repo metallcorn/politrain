@@ -132,16 +132,19 @@ def vocab_stats(
     ).all()
     seen_ids = {uv.vocab_id for uv in all_uvs}
     known_count = sum(1 for uv in all_uvs if (uv.correct_streak or 0) >= 1)
-    wrong_count = sum(1 for uv in all_uvs if (uv.correct_streak or 0) == 0)
+    # correct_streak==0 splits: practiced-and-wrong vs freshly-added-never-practiced (learn-word)
+    wrong_count = sum(1 for uv in all_uvs if (uv.correct_streak or 0) == 0 and uv.last_reviewed is not None)
+    to_learn_count = sum(1 for uv in all_uvs if (uv.correct_streak or 0) == 0 and uv.last_reviewed is None)
     due_count = sum(
         1 for uv in all_uvs
         if (uv.correct_streak or 0) >= 1 and uv.next_review and uv.next_review <= today
     )
     eligible_levels = _eligible_levels(current_user.level)
+    # New = unseen dictionary words + words the user clicked to learn but hasn't practiced yet
     new_count = db.query(models.Vocabulary).filter(
         models.Vocabulary.level.in_(eligible_levels),
         models.Vocabulary.id.notin_(seen_ids) if seen_ids else True,
-    ).count()
+    ).count() + to_learn_count
     pending = wrong_count + due_count + new_count
     return {
         "known_count": known_count,

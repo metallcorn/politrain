@@ -679,6 +679,9 @@ async def get_training_session(
             .filter(
                 models.UserVocabulary.user_id == current_user.id,
                 models.UserVocabulary.correct_streak == 0,
+                # Only genuinely-wrong words (practiced at least once), NOT freshly added
+                # via learn-word/auto-add, which also have correct_streak=0 but were never answered.
+                models.UserVocabulary.last_reviewed.isnot(None),
             )
             .limit(vocab_remaining)
             .all()
@@ -838,8 +841,15 @@ async def get_training_session(
                 except Exception:
                     pass
 
+            # correct_streak==0 splits two ways by whether the word was ever practiced:
+            #   last_reviewed set    → genuinely answered wrong → "error" bucket
+            #   last_reviewed null   → freshly added (learn-word/auto-add), never answered → "new" bucket
             wrong_ids = {vid for vid, uv in all_uvs.items()
-                         if uv.correct_streak == 0 and vid not in correctly_done_today}
+                         if uv.correct_streak == 0 and uv.last_reviewed is not None
+                         and vid not in correctly_done_today}
+            learn_ids = {vid for vid, uv in all_uvs.items()
+                         if uv.correct_streak == 0 and uv.last_reviewed is None
+                         and vid not in correctly_done_today}
             due_ids = {
                 vid for vid, uv in all_uvs.items()
                 if uv.correct_streak >= 1 and uv.next_review and uv.next_review <= today
@@ -881,10 +891,21 @@ async def get_training_session(
                 vocab_to_show += review_words
 
             new_slots = max(min_new_slots, count - len(vocab_to_show))
-            new_words = db.query(models.Vocabulary).filter(
-                models.Vocabulary.level.in_(eligible_levels),
-                models.Vocabulary.id.notin_(seen_ids) if seen_ids else True,
-            ).limit(new_slots).all()
+            new_words = []
+            # Words the user explicitly clicked to learn (correct_streak=0, never practiced) come first
+            if learn_ids:
+                learn_words = db.query(models.Vocabulary).filter(
+                    models.Vocabulary.id.in_(learn_ids),
+                    models.Vocabulary.level.in_(eligible_levels),
+                ).limit(new_slots).all()
+                new_words += learn_words
+            # Fill remaining slots with genuinely-unseen dictionary words
+            if len(new_words) < new_slots:
+                fresh = db.query(models.Vocabulary).filter(
+                    models.Vocabulary.level.in_(eligible_levels),
+                    models.Vocabulary.id.notin_(seen_ids) if seen_ids else True,
+                ).limit(new_slots - len(new_words)).all()
+                new_words += fresh
             for w in new_words:
                 vocab_status[w.id] = "new"
             vocab_to_show += new_words
@@ -1233,6 +1254,7 @@ async def submit_answer(
                     uv.interval_days = new_interval
                     uv.repetitions = new_reps
                     uv.next_review = next_rev
+                    uv.last_reviewed = datetime.utcnow()  # marks word as practiced (distinguishes wrong from never-seen)
                     # Use quality for streak — handles reverse-direction flashcards correctly
                     streak_correct = quality >= 3
                     uv.correct_streak = (uv.correct_streak or 0) + 1 if streak_correct else 0
@@ -1289,6 +1311,7 @@ async def submit_answer(
             uv.interval_days = new_interval
             uv.repetitions = new_reps
             uv.next_review = next_rev
+            uv.last_reviewed = datetime.utcnow()  # marks word as practiced
             uv.correct_streak = (uv.correct_streak or 0) + 1 if is_correct else 0
             db.commit()
 

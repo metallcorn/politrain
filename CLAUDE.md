@@ -539,7 +539,8 @@ backend/
 - `UserExerciseHistory` — история ответов на curriculum упражнения (exercise_id)
 - `Exercise` — статические упражнения по темам (curriculum)
 - `UserTopicProgress` — прогресс по темам; обновляется при ответе на topic/topic_d/new/bonus если topic_id заполнен;
-  для new/bonus: min 3 ответа до статуса "done" (score≥0.6 + attempts≥3); запись создаётся автоматически если не существует
+  статус "done" при score≥0.75 И attempts ≥ порога: new/bonus=9 (incidental, много повторов), topic/topic_d=5, lesson(exercise_id)=6;
+  score<0.6 → "needs_review"; запись создаётся автоматически если не существует
 - `ExercisePool` — общий пул AI-упражнений для всех пользователей: exercise_type, level, topic_id, content (JSON), question_norm (UNIQUE), is_active, report_count, use_count
   - Источник: `_save_to_pool()` вызывается для ВСЕХ валидированных упражнений (не только тех что пошли в DailyExercise)
   - Раздача: `_pool_draw(user_id, level, count)` — берёт несмотренные пользователем упражнения (NOT IN по pool_exercise_id из daily_exercises)
@@ -559,8 +560,11 @@ backend/
 
 ### Логика словаря
 - `correct_streak >= 1` → слово "знакомо", считается в vocab_count
-- `correct_streak == 0` (есть запись в user_vocabulary) → слово ошибочное, приоритет в vocab сессии
-- Ответил неверно в любом режиме → `correct_streak = 0` (слово возвращается)
+- `correct_streak == 0` разводится по `last_reviewed`:
+  - `last_reviewed IS NOT NULL` → реально ответили неверно → бейдж "⚠️ Ошибка", попадает в errors mode (error_vocab) и stats.wrong_count
+  - `last_reviewed IS NULL` → свежедобавлено (learn-word/auto-add), ни разу не отвечали → бейдж "✨ Новое слово", в errors НЕ попадает, считается в stats.new_count
+  - ВАЖНО: `last_reviewed` ставится при КАЖДОМ ответе на словарную карточку (оба пути answer handler) — без него отличить два состояния нельзя (SM2 при неверном тоже сбрасывает repetitions=0)
+- Ответил неверно в любом режиме → `correct_streak = 0`, `last_reviewed = now` (слово возвращается как ошибка)
 - Дневная сессия автоматически добавляет 2 новых слова (source="review")
 - Когда незнакомых слов < 20 → `_ensure_vocab_pool()` генерирует ещё 30 через Мистраля
 - Во избежание повторов: Мистралю передаются последние 60 слов; бэкенд дополнительно дедуплицирует
@@ -725,3 +729,5 @@ frontend/src/
 | Flashcard VocabCard не принимает ответ с дефисом | normalize() не убирает дефисы → "интернет-магазин" ≠ "интернет магазин" | В Flashcard.jsx normalize добавлен `.replace(/-/g, ' ')` |
 | Валидатор не срабатывает хотя написан | Две функции с одинаковым именем — вторая (def ниже) перекрывает первую в Python; строгий `_fix_flashcard_exercise` был мёртв | ОДНО определение на функцию. Проверка: `grep '^def ' routers/training.py \| sed 's/(.*//' \| sort \| uniq -d` |
 | flashcard не идиома (zielone drzewo, czerwony) | Слабый валидатор перекрывал строгий (дубль) | Слитый `_fix_flashcard_exercise`: <2 слов или ≤3 слов без глагола (`_PL_VERB_ENDINGS`) → None |
+| learn-word слово показывается как "⚠️ Ошибка" / в работе над ошибками | `correct_streak=0` одинаков и у «ответили неверно», и у «только что добавили»; SM2 при неверном сбрасывает repetitions=0 → не различить по repetitions | `last_reviewed` ставится при каждом ответе; errors/vocab/stats разводят: NULL→new, NOT NULL→error |
+| Блок результата задания отличается между типами | Копипаст result-блока в 8 компонентах | Общий `ExerciseResult` (+`HintButton`); TranslatePhrase/Flashcard свои (обоснованно) |
