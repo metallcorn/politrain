@@ -516,7 +516,8 @@ backend/
                      `_log_call()` пишет model/purpose/tokens/duration/success/**error_message** в mistral_call_logs через raw sqlite3
     gamification.py — XP, стрики, достижения;
                        XP_RANKS — 25 рангов (Новичок I→Эксперт V, 0→128000 XP);
-                       XP_CORRECT=10, XP_INCORRECT=2, XP_VOCAB=5 (SRS-карточки), vocab source="vocab" → 0 XP;
+                       XP_CORRECT=10, XP_INCORRECT=2, XP_VOCAB=5 (SRS-карточки в daily/bonus);
+                       vocab-сессия (source="vocab"): XP_VOCAB_NEW=2 (новое/ошибочное), XP_VOCAB_REVIEW=1 (повторение), 0 за неверный;
                        `get_game_level(xp)` → (rank_num, name, xp_to_next, rank_start) — 4 значения;
                        `update_streak()` обновляет streak_days и best_streak
     sm2.py         — алгоритм интервального повторения (SRS)
@@ -664,8 +665,8 @@ frontend/src/
 | judge_sentence с ___ | Мистраль иногда генерит fill_blank-образные judge | `_fix_judge_sentence_exercise` отбрасывает если в question есть ___ |
 | mode=new таймаут/ошибка | Всегда вызывал генерацию даже если bonus уже есть | Проверять uncompleted_bonus перед `_generate_bonus_pool`, как mode=bonus |
 | Повторяющиеся упражнения | Мистраль генерирует похожие вопросы каждый раз | `_seen_questions()` — Python-дедупликация последних 60 выполненных, не засорять промт |
-| Мега-промт = плохое качество | Один промт на много типов — Мистраль путается | До 7 параллельных батчей: N grammar per-topic + N lexical per-topic + judge + letter_tiles + word_definition через asyncio.gather |
-| daily_pool таймаут | mistral-large не укладывается в 25с для генерации упражнений | До 7 параллельных батчей по 2-3 упражнения, каждый timeout=60с, fallback на mistral-small |
+| Мега-промт = плохое качество | Один промт на много типов — Мистраль путается | До 7 батчей через asyncio.gather (N grammar per-topic + N lexical per-topic + judge + letter_tiles + word_definition), но не более 3 одновременно (`_API_SEMAPHORE`) |
+| daily_pool таймаут | mistral-large не укладывается в 25с для генерации упражнений | Батчи по 2-3 упражнения, каждый timeout=60с, fallback на mistral-small; параллелизм ограничен семафором=3 |
 | nginx обрывает соединение | proxy_read_timeout по умолчанию 60с, Mistral генерирует до 63с | proxy_read_timeout 90s в /etc/nginx/sites-available/default (требует root) |
 | Таблица в статье не рендерится | Кастомный parseTable требует непустой заголовок | Всегда писать осмысленные названия колонок в первой строке таблицы |
 | Бэкенд не видит изменения | Не перезапущен после правки | Всегда kill + restart |
@@ -704,7 +705,7 @@ frontend/src/
 | topic_title не видно в badge бонуса | Старые упражнения в БД без topic_title | Удалить uncompleted bonus: `DELETE FROM daily_exercises WHERE source='bonus' AND is_completed=0 AND date=date('now')` |
 | `get_game_level` возвращает 4 значения | Возвращает `(rank_num, name, xp_to_next, rank_start)` — 4-tuple | Распаковывать как `level, name, xp_to_next, rank_start = get_game_level(xp)` |
 | Лидерборд пуст если никто не занимался | Запрос фильтрует `xp_earned > 0`, текущий пользователь всегда включается | Если xp=0 у всех — entries=[current_user], total_users=1 |
-| vocab source XP | source='vocab' (know/don't know) → 0 XP; flashcard с vocab_id → XP_VOCAB=5; обычные упражнения → XP_CORRECT=10 | `_vocab_mode` устанавливается в answer handler до XP-блока |
+| vocab source XP | vocab-сессия: XP_VOCAB_NEW=2 (новое/ошибочное), XP_VOCAB_REVIEW=1 (повторение), 0 за неверный; flashcard с vocab_id (daily/bonus) → XP_VOCAB=5; обычные упражнения → XP_CORRECT=10 | `_vocab_mode="vocab_session"` устанавливается в answer handler до XP-блока |
 | Тема не соответствует упражнению | Round-robin topic assignment → flashcard про garnitur помечен "Алфавит" | _batch_for_topic_lexical() — отдельный батч per-topic для flashcard/translate/order_words; judge/tiles/word_def глобальны без тем |
 | topic_d без названия темы в бейдже | topic_title не добавлялся в content JSON | _gen_for_topic() добавляет item["topic_title"] перед сохранением |
 | Пул не пополняется при малом дефиците | Цикл в _generate_bonus/daily_pool прерывался после deficit упражнений — остальные выбрасывались | Двухпроходный цикл: сначала сохранить ВСЕ в пул, затем взять первые deficit в DailyExercise |
@@ -718,3 +719,5 @@ frontend/src/
 | explanation — dict вместо строки | Старые упражнения с `{"literal":..., "real":...}` → Pydantic 500 при ответе | `_sanitize_native_fields` нулит нестроковые поля; answer handler: `isinstance(raw_expl, str)` guard |
 | completed_at=NULL у старых ошибок | Колонка добавлена позже → ошибки невидимы в errors mode (фильтр IS NOT NULL) | Бэкфилл: `UPDATE daily_exercises SET completed_at=datetime(date\|\|' 12:00:00') WHERE is_completed=1 AND completed_at IS NULL` |
 | Flashcard VocabCard не принимает ответ с дефисом | normalize() не убирает дефисы → "интернет-магазин" ≠ "интернет магазин" | В Flashcard.jsx normalize добавлен `.replace(/-/g, ' ')` |
+| Валидатор не срабатывает хотя написан | Две функции с одинаковым именем — вторая (def ниже) перекрывает первую в Python; строгий `_fix_flashcard_exercise` был мёртв | ОДНО определение на функцию. Проверка: `grep '^def ' routers/training.py \| sed 's/(.*//' \| sort \| uniq -d` |
+| flashcard не идиома (zielone drzewo, czerwony) | Слабый валидатор перекрывал строгий (дубль) | Слитый `_fix_flashcard_exercise`: <2 слов или ≤3 слов без глагола (`_PL_VERB_ENDINGS`) → None |

@@ -104,9 +104,7 @@ export default function OnboardingPage() {
         {step === 1 && (
           <div className="card flex flex-col gap-6">
             <div className="text-center">
-              <div className="w-16 h-16 bg-primary-800 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                <span className="text-white font-bold text-2xl">P</span>
-              </div>
+              <img src="/icon.svg" alt="Politrain" className="w-20 h-20 rounded-2xl mx-auto mb-4 shadow-md" />
               <h1 className="text-2xl font-bold">Добро пожаловать!</h1>
               <p className="text-gray-500 mt-1">Выбери язык интерфейса</p>
             </div>

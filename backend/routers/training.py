@@ -67,24 +67,40 @@ _PL_VERB_ENDINGS = re.compile(
 )
 
 def _fix_flashcard_exercise(item: dict) -> dict | None:
-    """Reject flashcards that are not real idioms/fixed expressions.
-    Valid: multi-word phrases with a verb (mieć muchy w nosie, wziąć byka za rogi).
-    Invalid: single words, adj+noun combos without verb (zielone drzewo, czerwony)."""
+    """Validate idiom flashcards. Single merged validator (do NOT redefine below).
+
+    Rejects:
+    - missing question/answer, or a blank (___) → that's a fill_blank, not a flashcard
+    - single words/letters and short verbless phrases (zielone drzewo, czerwony) — not idioms
+    Fixes:
+    - if correct_answer is still Polish (== question or no Cyrillic), swap in the translation
+    """
     if item.get("type") != "flashcard":
         return item
     question = (item.get("question") or "").strip()
-    if not question:
+    correct = (item.get("correct_answer") or "").strip()
+    translation = (item.get("translation") or "").strip()
+    if not question or not correct:
         return None
+    # Flashcard question must not contain a blank — that's a fill_blank
+    if "___" in question:
+        return None
+    # Idiom shape check: reject single words and short verbless phrases
     words = question.split()
-    # Single word or single letter — not an idiom
     if len(words) < 2:
         return None
-    # Two-word adj+noun with no verb is not a fixed expression
-    if len(words) == 2 and not _PL_VERB_ENDINGS.search(question):
-        return None
-    # Three+ words without any verb-like form are likely random phrases too
     if len(words) <= 3 and not _PL_VERB_ENDINGS.search(question):
         return None
+    # If correct_answer is identical to question, it's still Polish — use translation as the answer
+    if correct.lower() == question.lower():
+        if translation and translation.lower() != question.lower():
+            item["correct_answer"] = translation
+            return item
+        return None
+    # If correct_answer looks Polish (no Cyrillic) but translation has Cyrillic, swap
+    has_cyr = lambda s: bool(re.search(r'[а-яёА-ЯЁ]', s))
+    if not has_cyr(correct) and has_cyr(translation):
+        item["correct_answer"] = translation
     return item
 
 
@@ -229,33 +245,6 @@ def _fix_letter_tiles_exercise(item: dict) -> dict | None:
     q_norm = _strip(question)
     if re.search(r'\b' + re.escape(c_norm) + r'\b', q_norm):
         return None  # answer visible in question
-    return item
-
-
-def _fix_flashcard_exercise(item: dict) -> dict | None:
-    """Ensure flashcard has Polish in question and native translation in correct_answer."""
-    if item.get("type") != "flashcard":
-        return item
-    question = (item.get("question") or "").strip()
-    correct = (item.get("correct_answer") or "").strip()
-    translation = (item.get("translation") or "").strip()
-    if not question or not correct:
-        return None
-    # Flashcard question must not contain a blank — that's a fill_blank, not a flashcard
-    if "___" in question:
-        return None
-    # If correct_answer is identical (or near-identical) to question, it's still Polish.
-    # Use the translation field as fallback.
-    if correct.lower() == question.lower():
-        if translation and translation.lower() != question.lower():
-            item["correct_answer"] = translation
-            return item
-        return None
-    # If correct_answer looks like Polish (no Cyrillic) but translation has Cyrillic, swap.
-    has_cyr = lambda s: bool(re.search(r'[а-яёА-ЯЁ]', s))
-    if not has_cyr(correct) and has_cyr(translation):
-        item["correct_answer"] = translation
-        return item
     return item
 
 

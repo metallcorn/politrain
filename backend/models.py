@@ -369,3 +369,4 @@ class MistralCallLog(Base):
     output_tokens = Column(Integer, default=0)
     success = Column(Boolean, default=True)
     duration_ms = Column(Integer, default=0)
+    error_message = Column(Text, nullable=True)
