@@ -512,9 +512,13 @@ backend/
     topics.py      — темы, уроки, упражнения по темам
     vocabulary.py  — статистика словаря (/vocabulary/stats);
                      POST /vocabulary/learn-word — добавляет слово в словарь пользователя из подсказки:
-                       body: {word: str, translation: str}; находит или создаёт Vocabulary (polish, translation_ru, level=user.level),
+                       body: {word: str, translation: str}; находит или создаёт Vocabulary (polish, translation_ru, level=user.level, translation_en=''),
                        создаёт UserVocabulary если не существует (next_review=today → доступно для повторения сразу);
                        возвращает {ok, vocab_id, is_new}
+                       ВАЖНО: слово сохраняется в той форме как было в предложении (часто инфлектированной: bieli, przeciwieństwem);
+                       translation_en='' помечает такие записи. Периодически чистить:
+                       `env $(cat ../.env|grep -v '^#'|xargs) venv/bin/python3 scripts/normalize_vocab.py [--dry-run]`
+                       — Mistral приводит к словарной форме (лемме), дедуплицирует против канонических (мигрирует UserVocabulary)
     admin.py       — жалобы, пользователи, статистика (только ADMIN_USERNAME);
                      GET /admin/mistral-usage?days=30 — расход Mistral API: по дням (large/small стэк),
                        по purpose, по user_id; поля: calls, input_tokens, output_tokens, cost_usd
