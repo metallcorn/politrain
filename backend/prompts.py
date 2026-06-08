@@ -230,17 +230,8 @@ LEXICAL_EXERCISES_PROMPT = (
     "Уровень: {level}. Родной язык: {native_language}.\n"
     "Тематики для примеров (используй их, а не абстрактные фразы): {interest_themes}\n\n"
     + _EXERCISE_COMMON_RULES + "\n\n"
-    "Сгенерируй {count} упражнений. Типы: flashcard, translate, order_words. Миксуй равномерно.\n\n"
-    "FLASHCARD — СТРОГО реальные идиомы и устойчивые выражения польского языка:\n"
-    "- question: фраза обязательно содержит ГЛАГОЛ (mieć, wziąć, być, robić и т.п.)\n"
-    "  Хорошо: «mieć muchy w nosie», «wziąć byka za rogi», «lać wodę», «być na bieżąco»\n"
-    "  ЗАПРЕЩЕНО: одиночные слова; прилагательное+существительное без глагола (zielone drzewo, czerwony kwiat)\n"
-    "  ЗАПРЕЩЕНО: произвольные фразы не из живой речи; падежные формы; конструкции типа «mój dom»\n"
-    "- Если по теме нет настоящей идиомы с глаголом — генерируй translate или order_words ВМЕСТО flashcard\n"
-    "- ТОЛЬКО реально существующие польские идиомы — не изобретай\n"
-    "- correct_answer: смысловой перевод на {native_language} (НЕ дословный)\n"
-    '- translation: дословный перевод (букв. "...") — обязательно\n'
-    "- word_hints: null\n\n"
+    "Сгенерируй {count} упражнений. Типы: translate, order_words. Миксуй равномерно.\n"
+    "(Идиомы НЕ генерируй здесь — для них отдельный промт.)\n\n"
     "TRANSLATE — перевод фразы:\n"
     "- question: короткая фраза на {native_language}, ≤8 слов\n"
     "- correct_answer: польский перевод\n"
@@ -258,7 +249,6 @@ LEXICAL_EXERCISES_PROMPT = (
     "- word_hints: польские слова → {native_language}\n\n"
     "Ответь ТОЛЬКО валидным JSON массивом без markdown:\n"
     "[\n"
-    '  {{"type": "flashcard", "question": "mieć motyle w brzuchu", "correct_answer": "волнение / бабочки в животе", "options": null, "hint": null, "explanation": "О приятном волнении или влюблённости", "translation": "букв. \'иметь бабочек в животе\'", "word_hints": null}},\n'
     '  {{"type": "translate", "question": "Я уже иду домой.", "correct_answer": "Już idę do domu.", "options": null, "hint": null, "explanation": "już = уже, idę = иду", "translation": null, "word_hints": {{"уже": "już", "иду": "idę", "домой": "do domu"}}}},\n'
     '  {{"type": "order_words", "question": "tę / wczoraj / czytałem / książkę", "correct_answer": "Wczoraj czytałem tę książkę. / Czytałem tę książkę wczoraj.", "options": null, "hint": "Порядок слов в польском гибкий — наречие времени может стоять в начале или конце", "explanation": null, "translation": null, "word_hints": {{"wczoraj": "вчера", "czytałem": "читал", "tę": "эту", "książkę": "книгу"}}}}\n'
     "]"
@@ -434,6 +424,35 @@ GRAMMAR_EXAM_PROMPT = """
   }}
 ]
 """
+
+# Выделенный промт для идиом-flashcard. Топик-FREE: Мистраль берёт РЕАЛЬНЫЕ идиомы из своих
+# знаний, его НЕ заставляют придумывать идиому под грамматическую тему (это и порождало мусор).
+IDIOM_FLASHCARD_PROMPT = (
+    "Ты эксперт по польской фразеологии.\n"
+    "Уровень пользователя: {level}. Родной язык: {native_language}.\n\n"
+    "Сгенерируй {count} карточек с РЕАЛЬНЫМИ польскими идиомами и устойчивыми выражениями.\n\n"
+    "ЖЁСТКИЕ ПРАВИЛА:\n"
+    "- ТОЛЬКО реально существующие, употребимые в живой речи польские идиомы/фразеологизмы/поговорки.\n"
+    "  Если не уверен на 100%, что фраза реально существует — НЕ включай её. Лучше меньше, но настоящие.\n"
+    "- НЕ выдумывай правдоподобно звучащие фразы. Примеры выдуманного мусора (НЕ делать): "
+    "'pazur w kieszeni', 'zielony kot na dachu'.\n"
+    "- Каждая идиома ОБЯЗАТЕЛЬНО содержит глагол (mieć, robić, wziąć, być, lać, rzucać, trzymać и т.п.).\n"
+    "  ЗАПРЕЩЕНО: одиночные слова, прилагательное+существительное без глагола (zielone drzewo), просто словосочетания.\n"
+    "- Разнообразие: разные идиомы каждый раз, разные глаголы и темы (эмоции, работа, отношения, деньги, время).\n"
+    "- Сложность под уровень {level}: для A0-A1 — самые частотные бытовые идиомы; выше — можно реже встречающиеся.\n\n"
+    "ПОЛЯ каждой карточки:\n"
+    "- type: всегда \"flashcard\"\n"
+    "- question: сама польская идиома целиком (без ___, без пропусков)\n"
+    "- correct_answer: СМЫСЛОВОЙ перевод на {native_language} (что это значит), НЕ дословный\n"
+    "- translation: дословный перевод (букв. \"...\") — чтобы видна была игра слов\n"
+    "- explanation: краткое пояснение на {native_language} — когда и как употребляется (1 предложение)\n"
+    "- options: null, hint: null, word_hints: null\n\n"
+    "Ответь ТОЛЬКО валидным JSON массивом без markdown:\n"
+    "[\n"
+    '  {{"type": "flashcard", "question": "mieć muchy w nosie", "correct_answer": "быть не в духе, дуться", "options": null, "hint": null, "explanation": "О человеке, который раздражён без явной причины", "translation": "букв. \'иметь мух в носу\'", "word_hints": null}},\n'
+    '  {{"type": "flashcard", "question": "rzucać słowa na wiatr", "correct_answer": "бросать слова на ветер, не держать слово", "options": null, "hint": null, "explanation": "О том, кто обещает, но не выполняет", "translation": "букв. \'бросать слова на ветер\'", "word_hints": null}}\n'
+    "]"
+)
 
 IDIOM_DRILL_PROMPT = """
 Пользователь изучает польский язык (уровень {level}, родной язык: {native_language}).

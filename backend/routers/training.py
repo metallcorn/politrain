@@ -1955,11 +1955,32 @@ async def _generate_exercises(user, count: int, interest_themes_str: str, level:
     word_def_count = max(1, count // 10)        # ~1-2 из 15
     letter_tiles_count = max(1, count // 8)     # ~2 из 15
     judge_count = max(2, count // 5)            # ~3 из 15
-    remaining = count - judge_count - letter_tiles_count - word_def_count
+    idiom_count = max(1, count // 8)            # ~2 из 15 — отдельный топик-free батч реальных идиом
+    remaining = count - judge_count - letter_tiles_count - word_def_count - idiom_count
     grammar_count = (remaining + 1) // 2
     lexical_count = remaining - grammar_count
 
     _SYSTEM = "You are a Polish language exercise generator. Respond only with valid JSON array."
+
+    async def _batch_idiom(batch_count):
+        """Topic-free idiom flashcards from Mistral's real idiom knowledge (not forced into a grammar topic)."""
+        prompt = prompts.IDIOM_FLASHCARD_PROMPT.format(
+            level=gen_level, native_language=user.native_language, count=batch_count,
+        )
+        for model_name, timeout_sec in [("mistral-large-latest", 60.0), ("mistral-small-latest", 40.0)]:
+            try:
+                raw = await mistral.simple_prompt(
+                    system=_SYSTEM, user=prompt,
+                    temperature=0.9, max_tokens=2000,  # higher temp → more idiom variety
+                    timeout=timeout_sec, retries=1, model=model_name,
+                    purpose="idiom", user_id=user.id,
+                )
+                result = await mistral.parse_json_response(raw)
+                print(f"[idiom] {model_name} → {len(result)} items for user {user.id}")
+                return result
+            except Exception as e:
+                print(f"[idiom] {model_name} failed for user {user.id}: {type(e).__name__}: {e}")
+        return []
 
     async def _batch(prompt_template, batch_count, label):
         prompt = prompt_template.format(
@@ -2039,13 +2060,11 @@ async def _generate_exercises(user, count: int, interest_themes_str: str, level:
             f"Контекст правила:\n{summary}\n\n"
             + prompts._EXERCISE_COMMON_RULES + "\n\n"
             f"Сгенерируй {batch_count} упражнений с лексикой и фразами, связанными с этой темой.\n"
-            "Типы (смешай равномерно): flashcard, translate, order_words.\n"
-            "FLASHCARD: question = одно польское слово или краткая фраза из контекста темы, correct_answer = перевод.\n"
+            "Типы (смешай равномерно): translate, order_words. (Идиомы/flashcard здесь НЕ генерируй.)\n"
             "TRANSLATE: русская фраза ≤ 10 слов → польский перевод, используя грамматику темы.\n"
             "ORDER_WORDS: слова польского предложения перемешаны через ' / ', correct_answer = правильный порядок, translation = перевод.\n"
             "Ответь ТОЛЬКО валидным JSON массивом без markdown:\n"
             "[\n"
-            '  {"type": "flashcard", "question": "mój", "correct_answer": "мой", "hint": null, "translation": null},\n'
             '  {"type": "translate", "question": "Это моя книга.", "correct_answer": "To jest moja książka.", "hint": null, "translation": null},\n'
             '  {"type": "order_words", "question": "jest / moja / To / książka", "correct_answer": "To jest moja książka.", "hint": null, "translation": "Это моя книга."}\n'
             "]"
@@ -2080,27 +2099,30 @@ async def _generate_exercises(user, count: int, interest_themes_str: str, level:
                 _batch(prompts.JUDGE_EXERCISES_PROMPT, judge_count, "judge"),
                 _batch(prompts.LETTER_TILES_PROMPT, letter_tiles_count, "letter_tiles"),
                 _batch(prompts.WORD_DEFINITION_PROMPT, word_def_count, "word_def"),
+                _batch_idiom(idiom_count),
             ]
         )
         results = await asyncio.gather(*all_tasks)
         grammar_gen = [item for sub in results[:n_t] for item in sub]
         lexical_gen = [item for sub in results[n_t:2*n_t] for item in sub]
-        judge_gen, tiles_gen, word_def_gen = results[2*n_t], results[2*n_t+1], results[2*n_t+2]
-        # Assign topics to global batches via round-robin so every exercise has a badge
+        judge_gen, tiles_gen, word_def_gen, idiom_gen = results[2*n_t], results[2*n_t+1], results[2*n_t+2], results[2*n_t+3]
+        # Assign topics to global batches via round-robin so every exercise has a badge.
+        # Idioms stay topic-FREE (they're not about a grammar rule) → no topic badge.
         global_gen = judge_gen + tiles_gen + word_def_gen
         for i, item in enumerate(global_gen):
             t = topics[i % n_t]
             item["topic_slug"] = t.slug
             item["topic_title"] = t.title_ru or t.slug
     else:
-        grammar_gen, lexical_gen, judge_gen, tiles_gen, word_def_gen = await asyncio.gather(
+        grammar_gen, lexical_gen, judge_gen, tiles_gen, word_def_gen, idiom_gen = await asyncio.gather(
             _batch(prompts.GRAMMAR_EXERCISES_PROMPT, grammar_count, "grammar"),
             _batch(prompts.LEXICAL_EXERCISES_PROMPT, lexical_count, "lexical"),
             _batch(prompts.JUDGE_EXERCISES_PROMPT, judge_count, "judge"),
             _batch(prompts.LETTER_TILES_PROMPT, letter_tiles_count, "letter_tiles"),
             _batch(prompts.WORD_DEFINITION_PROMPT, word_def_count, "word_def"),
+            _batch_idiom(idiom_count),
         )
-    return grammar_gen + lexical_gen + judge_gen + tiles_gen + word_def_gen
+    return grammar_gen + lexical_gen + judge_gen + tiles_gen + word_def_gen + idiom_gen
 
 
 async def _generate_topic_pool(user, topic_obj, db: Session, today, count: int):
