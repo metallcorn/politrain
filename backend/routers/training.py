@@ -1858,6 +1858,44 @@ async def _ensure_vocab_pool(user, db: Session, threshold: int = 20, batch: int 
         print(f"[vocab_gen] Added {added} new vocabulary words for user {user.id}")
 
 
+def _select_interest_themes(prefs, n: int = 2) -> str:
+    """Pick up to n interest themes with even rotation (mirrors the topic 7-day rotation idea,
+    but via a stored cursor since themes aren't tracked on DailyExercise).
+
+    Prefers themes not used recently (fresh) over recently-used (stale); records the choice in
+    prefs.recent_themes so over time every theme is covered evenly with no skew. The caller's
+    later db.commit() persists the updated cursor. Mutates prefs in place.
+    """
+    fallback = "не заданы (используй разнообразные темы)"
+    if not prefs or not prefs.interest_themes:
+        return fallback
+    try:
+        themes = [t for t in json.loads(prefs.interest_themes) if t]
+    except Exception:
+        return fallback
+    if not themes:
+        return fallback
+    if len(themes) <= n:
+        return ", ".join(themes)
+
+    try:
+        recent = [t for t in json.loads(prefs.recent_themes or "[]") if t]
+    except Exception:
+        recent = []
+
+    fresh = [t for t in themes if t not in recent]
+    stale = [t for t in themes if t in recent]
+    random.shuffle(fresh)
+    random.shuffle(stale)
+    chosen = (fresh + stale)[:n]
+
+    # Keep a rolling window so at least n themes stay "fresh" → forces cycling through all
+    new_recent = recent + chosen
+    window = max(0, len(themes) - n)
+    prefs.recent_themes = json.dumps(new_recent[-window:], ensure_ascii=False)
+    return ", ".join(chosen)
+
+
 def _select_topics_for_generation(user, db: Session, n: int = 2) -> list:
     """Pick n grammar topics for generation.
 
@@ -2403,15 +2441,7 @@ async def _generate_daily_pool(user, db: Session, today, count: int):
     # AI fills whatever is left; reserve ~6 slots for new_vocab(2) and topic_d(~4)
     ai_target = max(count - len(weak_exs) - len(due_vocab) - len(ai_due) - 6, count // 4)
 
-    interest_themes_str = "не заданы (используй разнообразные темы)"
-    if prefs and prefs.interest_themes:
-        try:
-            themes = json.loads(prefs.interest_themes)
-            if themes:
-                sample = random.sample(themes, min(2, len(themes)))
-                interest_themes_str = ", ".join(sample)
-        except Exception:
-            pass
+    interest_themes_str = _select_interest_themes(prefs)  # max 2 themes, even rotation
 
     gen_topics = _select_topics_for_generation(user, db)
     topic_id_by_slug = {t.slug: t.id for t in gen_topics}
@@ -2557,15 +2587,7 @@ async def _generate_bonus_pool(user, db: Session, today, count: int):
     # Drill known idioms before generating the main bonus batch
     await _generate_idiom_drill_exercises(user, db, today, source="bonus")
 
-    interest_themes_str = "не заданы (используй разнообразные темы)"
-    if prefs and prefs.interest_themes:
-        try:
-            themes = json.loads(prefs.interest_themes)
-            if themes:
-                sample = random.sample(themes, min(2, len(themes)))
-                interest_themes_str = ", ".join(sample)
-        except Exception:
-            pass
+    interest_themes_str = _select_interest_themes(prefs)  # max 2 themes, even rotation
 
     challenge_level = _next_level(user.level)
     gen_topics = _select_topics_for_generation(user, db)

@@ -291,6 +291,7 @@ class UserContentPreferences(Base):
     session_length = Column(String(10), default="standard")
     daily_goal_minutes = Column(Integer, default=15)
     interest_themes = Column(Text, nullable=True)  # JSON list of theme keys
+    recent_themes = Column(Text, nullable=True)    # JSON list of recently-used themes (rotation cursor)
     updated_at = Column(DateTime, nullable=True)
 
     user = relationship("User", back_populates="content_preferences")
