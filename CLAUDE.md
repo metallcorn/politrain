@@ -476,11 +476,12 @@ backend/
   prompts.py       — ВСЕ промты для Mistral:
                      _EXERCISE_COMMON_RULES — общий блок правил (без format-переменных, конкатенируется в каждый промт)
                      GRAMMAR_EXERCISES_PROMPT — fill_blank + multiple_choice
-                     LEXICAL_EXERCISES_PROMPT — flashcard + translate + order_words
+                     LEXICAL_EXERCISES_PROMPT — translate + order_words (БЕЗ flashcard — идиомы вынесены)
                      JUDGE_EXERCISES_PROMPT — judge_sentence отдельно (50/50 true/false)
                      LETTER_TILES_PROMPT — letter_tiles отдельно (одно слово, дедуплицированные буквы-карточки)
                      WORD_DEFINITION_PROMPT — word_definition отдельно (загадка по-польски → пользователь пишет слово)
-                     IDIOM_DRILL_PROMPT — fill_blank/letter_tiles из известных пользователю идиом
+                     IDIOM_FLASHCARD_PROMPT — flashcard-идиомы отдельным ТОПИК-FREE батчем (_batch_idiom): реальные польские идиомы из знаний Мистраля, НЕ привязаны к грамматической теме (привязка порождала выдуманный мусор); глагол обязателен; пул+дедуп как у всех; идиомы НЕ получают topic badge
+                     IDIOM_DRILL_PROMPT — fill_blank/letter_tiles из УЖЕ известных пользователю идиом (UserKnownExpression)
                      VOCAB_GENERATION_PROMPT, TRANSLATION_CHECK_PROMPT,
                      CHAT_SYSTEM_PROMPT и др.
   routers/
@@ -752,6 +753,8 @@ frontend/src/
 | Mistral rate limit при 7 параллельных батчах | Все вызовы large-latest падают одновременно (200-400ms, tokens=0) → fallback small генерирует хуже | `_API_SEMAPHORE=asyncio.Semaphore(3)` в mistral.py — максимум 3 одновременных вызова |
 | Причина fallback неизвестна | mistral_call_logs.success=0 без деталей | `error_message` колонка: `"HTTP 429: ..."`, `"timeout after Xms"` — смотреть через admin/mistral-usage |
 | flashcard с одиночным словом/буквой | Mistral генерит flashcard для "ą", "żółty" вместо идиом | `_fix_flashcard_exercise`: len(question.split()) < 2 → None |
+| Идиомы — выдуманный мусор / не идиомы | Корень: у flashcard НЕ было своего промта, генерились внутри lexical-батча привязанными к грамм. теме → Mistral придумывал «идиому про цвета» | IDIOM_FLASHCARD_PROMPT + `_batch_idiom` — отдельный ТОПИК-FREE батч; flashcard убран из LEXICAL_EXERCISES_PROMPT и _batch_for_topic_lexical |
+| Генерация: правил/тем слишком много | Если в промт закинуть весь пул правил+тем — Mistral путается, перекосы | `_select_topics_for_generation(n=2)` (7-дневная ротация) + `random.sample(themes, min(2,...))` — максимум 2 правила + 2 темы за генерацию |
 | judge_sentence false без explanation | Пользователь не понимает почему неверно | `_fix_judge_sentence_exercise`: correct_answer=="false" AND not explanation → None |
 | explanation — dict вместо строки | Старые упражнения с `{"literal":..., "real":...}` → Pydantic 500 при ответе | `_sanitize_native_fields` нулит нестроковые поля; answer handler: `isinstance(raw_expl, str)` guard |
 | completed_at=NULL у старых ошибок | Колонка добавлена позже → ошибки невидимы в errors mode (фильтр IS NOT NULL) | Бэкфилл: `UPDATE daily_exercises SET completed_at=datetime(date\|\|' 12:00:00') WHERE is_completed=1 AND completed_at IS NULL` |
