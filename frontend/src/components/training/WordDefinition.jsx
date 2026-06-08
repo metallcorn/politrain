@@ -2,13 +2,13 @@ import { useState, useRef } from 'react'
 import Input from '../ui/Input'
 import Button from '../ui/Button'
 import PolishKeyboard from './PolishKeyboard'
-import Markdown from '../ui/Markdown'
 import WordHintText from './WordHintText'
+import HintButton from './HintButton'
+import ExerciseResult from './ExerciseResult'
 
 export default function WordDefinition({ exercise, onAnswer, result, loading }) {
   const [value, setValue] = useState('')
   const [submitted, setSubmitted] = useState(false)
-  const [hintShown, setHintShown] = useState(false)
   const [hintUsed, setHintUsed] = useState(false)
   const inputRef = useRef(null)
 
@@ -39,18 +39,7 @@ export default function WordDefinition({ exercise, onAnswer, result, loading }) 
         {hasHints && !submitted && (
           <p className="text-xs text-gray-400 mt-2">Подчёркнутые слова — нажми для перевода</p>
         )}
-        {exercise.hint && !submitted && (
-          hintShown
-            ? <div className="text-sm text-amber-600 mt-3 animate-fade-in">
-                💡 {exercise.hint} <span className="text-xs opacity-60">(-1 XP)</span>
-              </div>
-            : <button
-                onClick={() => { setHintShown(true); setHintUsed(true) }}
-                className="text-xs text-gray-400 hover:text-amber-500 transition-colors mt-3 flex items-center gap-1"
-              >
-                💡 Показать подсказку <span className="opacity-60">(-1 XP)</span>
-              </button>
-        )}
+        {!submitted && <HintButton hint={exercise.hint} onReveal={() => setHintUsed(true)} />}
       </div>
 
       <Input
@@ -72,29 +61,7 @@ export default function WordDefinition({ exercise, onAnswer, result, loading }) 
         </>
       )}
 
-      {result && (
-        <div className={`rounded-xl p-4 animate-bounce-in ${result.is_correct ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
-          <p className={`font-semibold ${result.is_correct ? 'text-green-700' : 'text-red-700'}`}>
-            {result.is_correct
-              ? result.diacritic_hint ? '✓ Верно, но...' : '✓ Правильно!'
-              : '✗ Неправильно'}
-            {hintUsed && result.is_correct && <span className="font-normal text-sm ml-2">(с подсказкой)</span>}
-          </p>
-          {result.diacritic_hint && (
-            <p className="text-sm text-amber-700 mt-1">
-              Не забывайте про диакритические знаки: <strong>{result.correct_answer}</strong>
-            </p>
-          )}
-          {!result.is_correct && (
-            <p className="text-sm text-gray-700 mt-1">Правильный ответ: <strong>{result.correct_answer}</strong></p>
-          )}
-          {exercise.translation && (
-            <p className="text-sm text-gray-500 mt-1 italic">{exercise.translation}</p>
-          )}
-          {result.explanation && <Markdown className="text-sm text-gray-600 mt-1">{result.explanation}</Markdown>}
-          {result.xp_earned > 0 && <p className="text-xs text-yellow-600 mt-1">+{result.xp_earned} XP</p>}
-        </div>
-      )}
+      <ExerciseResult result={result} hintUsed={hintUsed} translation={exercise.translation} />
     </div>
   )
 }

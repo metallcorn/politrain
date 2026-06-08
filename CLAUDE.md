@@ -604,7 +604,11 @@ frontend/src/
                        проп `onHintUsed` — вызывается при первом клике для -1 XP отслеживания;
                        saveToVocab=true у: FillBlank, MultipleChoice, JudgeSentence, LetterTilesBlank, WordDefinition;
                        TranslatePhrase — без saveToVocab (word_hints там русские→польские, инвертировано для vocab модели);
-                       WordOrder — без WordHintText (UI чипов, не текст)
+                       WordOrder — без WordHintText (UI чипов, не текст);
+                     ExerciseResult — общий блок результата (зелёная/красная карточка ✓/✗, diacritic_hint, correct_answer, translation, explanation, +XP);
+                       пропы: result, hintUsed, showCorrectAnswer (false у JudgeSentence — выбор true/false уже подсвечен), variants (массив для WordOrder), translation;
+                       используют ВСЕ кроме TranslatePhrase (особая 3-цветная логика нечёткой оценки) и Flashcard (самооценка карточек);
+                     HintButton — общий тоггл «💡 Показать подсказку (-1 XP)»; пропы: hint, onReveal, label; используют FillBlank/MultipleChoice/LetterTilesBlank/WordDefinition
     ui/            — Button, Card, Input, ProgressBar, Skeleton (animate-pulse заглушки), Markdown (react-markdown wrapper)
     layout/        — Layout с min-w-0 на flex контейнере (важно для mobile); page transitions через key={location.pathname}
     gamification/  — ActivityDashboard: Ring (SVG кольцо цели), WeekChart (7 дней), MonthChart (30 дней), SourceBar (breakdown по источникам);

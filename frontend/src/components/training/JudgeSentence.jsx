@@ -1,8 +1,7 @@
 import { useState } from 'react'
-import Button from '../ui/Button'
 import { CheckCircle, XCircle } from 'lucide-react'
-import Markdown from '../ui/Markdown'
 import WordHintText from './WordHintText'
+import ExerciseResult from './ExerciseResult'
 
 export default function JudgeSentence({ exercise, onAnswer, result, loading }) {
   const [chosen, setChosen] = useState(null)
@@ -70,14 +69,7 @@ export default function JudgeSentence({ exercise, onAnswer, result, loading }) {
         </button>
       </div>
 
-      {result && (
-        <div className={`rounded-xl p-4 animate-bounce-in ${result.is_correct ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
-          <p className={`font-semibold mb-1 ${result.is_correct ? 'text-green-700' : 'text-red-700'}`}>
-            {result.is_correct ? '✓ Верно!' : '✗ Неверно'}
-          </p>
-          {result.explanation && <Markdown className="text-sm text-gray-700">{result.explanation}</Markdown>}
-        </div>
-      )}
+      <ExerciseResult result={result} hintUsed={hintUsed} showCorrectAnswer={false} />
     </div>
   )
 }

@@ -1,7 +1,8 @@
 import { useState, useMemo } from 'react'
 import Button from '../ui/Button'
-import Markdown from '../ui/Markdown'
 import WordHintText from './WordHintText'
+import HintButton from './HintButton'
+import ExerciseResult from './ExerciseResult'
 
 function normalize(s) {
   return (s || '').toLowerCase().trim()
@@ -27,7 +28,6 @@ export default function LetterTilesBlank({ exercise, onAnswer, result, loading }
   const [available, setAvailable] = useState(tiles)
   const [arranged, setArranged] = useState([])
   const [submitted, setSubmitted] = useState(false)
-  const [hintShown, setHintShown] = useState(false)
   const [hintUsed, setHintUsed] = useState(false)
 
   const wordHints = exercise.word_hints || {}
@@ -76,16 +76,7 @@ export default function LetterTilesBlank({ exercise, onAnswer, result, loading }
         {hasHints && !submitted && (
           <p className="text-xs text-gray-400 mt-1">Подчёркнутые слова — нажми для перевода</p>
         )}
-        {exercise.hint && !submitted && (
-          hintShown
-            ? <div className="text-sm text-amber-600 mt-2 animate-fade-in">💡 <Markdown className="inline">{exercise.hint}</Markdown> <span className="text-xs opacity-60">(-1 XP)</span></div>
-            : <button
-                onClick={() => { setHintShown(true); setHintUsed(true) }}
-                className="text-xs text-gray-400 hover:text-amber-500 transition-colors mt-2 flex items-center gap-1"
-              >
-                💡 Показать подсказку <span className="opacity-60">(-1 XP)</span>
-              </button>
-        )}
+        {!submitted && <HintButton hint={exercise.hint} onReveal={() => setHintUsed(true)} />}
       </div>
 
       {/* Answer zone — fixed min-height so button doesn't jump */}
@@ -134,19 +125,7 @@ export default function LetterTilesBlank({ exercise, onAnswer, result, loading }
         </div>
       )}
 
-      {result && (
-        <div className={`rounded-xl p-4 animate-bounce-in ${result.is_correct ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
-          <p className={`font-semibold ${result.is_correct ? 'text-green-700' : 'text-red-700'}`}>
-            {result.is_correct ? '✓ Правильно!' : '✗ Неправильно'}
-            {hintUsed && result.is_correct && <span className="font-normal text-sm ml-2">(с подсказкой)</span>}
-          </p>
-          {!result.is_correct && (
-            <p className="text-sm text-gray-700 mt-1">Правильно: <strong>{result.correct_answer}</strong></p>
-          )}
-          {result.explanation && <Markdown className="text-sm text-gray-600 mt-1">{result.explanation}</Markdown>}
-          {result.xp_earned > 0 && <p className="text-xs text-yellow-600 mt-1">+{result.xp_earned} XP</p>}
-        </div>
-      )}
+      <ExerciseResult result={result} hintUsed={hintUsed} />
     </div>
   )
 }
