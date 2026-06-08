@@ -669,6 +669,7 @@ frontend/src/
 - SessionResult кнопка "продолжить": mode-aware — vocab → "Ещё слова", topic → "Повторить тему", errors → "Ещё ошибки", else → "Ещё задания"
 - LetterTilesBlank перемешивание: Fisher-Yates (не `sort(() => Math.random() - 0.5)` — тот даёт неравномерный результат)
 - LetterTilesBlank показывает `exercise.translation` под вопросом (серый курсив)
+- LetterTilesBlank + WordOrder: анимация сборки через framer-motion `layout`/`layoutId` (FLIP) — плитка «летит» из зоны в зону, остальные плавно перестраиваются. Каждая плитка `motion.button` с `layoutId={tile-${id}}` (общий layout = полёт) + `layout` (reflow) + spring + `whileTap`. WordOrder использует `{id, word}` объекты (слова могут повторяться → нельзя key по строке/индексу). НЕ ставить `transition-all`/`active:scale-95` на motion-кнопки — конфликт с transform framer; press через `whileTap`
 - SessionResult: звёздный рейтинг 1-5 + опциональный комментарий → `POST /training/session-rating`; exerciseIds передаются из TrainingSessionPage
 - TrainingPage: бонус всегда виден — задизаблен (div вместо Link, opacity-50) пока не выполнена дневная; `Promise.allSettled` вместо `Promise.all` для устойчивости к частичным ошибкам API
 - TopicDetailPage: skeleton вместо Spinner при загрузке; `last_result` из get_lesson предзаполняет exerciseResults; после ответа exerciseResults[ex.id] обновляется локально
