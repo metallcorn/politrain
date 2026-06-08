@@ -9,43 +9,60 @@
     </clipPath>
   </defs>
 
-  <!-- Polish flag background: white top, red bottom -->
+  <!-- Polish flag background -->
   <g clip-path="url(#rounded)">
     <rect width="512" height="256" fill="#ffffff"/>
     <rect y="256" width="512" height="256" fill="#dc2626"/>
+    <!-- Slogan in red area -->
+    <text x="256" y="468" text-anchor="middle"
+      font-family="Georgia, serif" font-size="44" font-style="italic"
+      fill="white" opacity="0.92" letter-spacing="1">skok po skoku</text>
   </g>
 
   <!-- Back legs -->
-  <ellipse cx="138" cy="370" rx="72" ry="36" fill="#16a34a" transform="rotate(-30 138 370)"/>
-  <ellipse cx="374" cy="370" rx="72" ry="36" fill="#16a34a" transform="rotate(30 374 370)"/>
+  <ellipse cx="138" cy="365" rx="72" ry="36" fill="#16a34a" transform="rotate(-30 138 365)"/>
+  <ellipse cx="374" cy="365" rx="72" ry="36" fill="#16a34a" transform="rotate(30 374 365)"/>
 
   <!-- Body -->
-  <ellipse cx="256" cy="320" rx="155" ry="120" fill="#22c55e"/>
+  <ellipse cx="256" cy="315" rx="155" ry="118" fill="#22c55e"/>
 
   <!-- Belly -->
-  <ellipse cx="256" cy="335" rx="100" ry="78" fill="url(#belly)"/>
+  <ellipse cx="256" cy="330" rx="100" ry="76" fill="url(#belly)"/>
 
   <!-- Head -->
-  <ellipse cx="256" cy="210" rx="155" ry="120" fill="#22c55e"/>
+  <ellipse cx="256" cy="205" rx="150" ry="115" fill="#22c55e"/>
 
-  <!-- Eyes (bulging on top) -->
-  <ellipse cx="178" cy="148" rx="52" ry="50" fill="#22c55e"/>
-  <ellipse cx="334" cy="148" rx="52" ry="50" fill="#22c55e"/>
-  <ellipse cx="178" cy="145" rx="40" ry="38" fill="white"/>
-  <ellipse cx="334" cy="145" rx="40" ry="38" fill="white"/>
-  <circle cx="182" cy="145" r="22" fill="#1a1a2e"/>
-  <circle cx="338" cy="145" r="22" fill="#1a1a2e"/>
-  <circle cx="188" cy="138" r="7" fill="white"/>
-  <circle cx="344" cy="138" r="7" fill="white"/>
+  <!-- Eyes -->
+  <ellipse cx="178" cy="145" rx="52" ry="50" fill="#22c55e"/>
+  <ellipse cx="334" cy="145" rx="52" ry="50" fill="#22c55e"/>
+  <ellipse cx="178" cy="142" rx="40" ry="38" fill="white"/>
+  <ellipse cx="334" cy="142" rx="40" ry="38" fill="white"/>
+  <circle cx="182" cy="142" r="22" fill="#1a1a2e"/>
+  <circle cx="338" cy="142" r="22" fill="#1a1a2e"/>
+  <circle cx="188" cy="135" r="7" fill="white"/>
+  <circle cx="344" cy="135" r="7" fill="white"/>
 
-  <!-- Mouth / smile -->
-  <path d="M 185 265 Q 256 305 327 265" stroke="#15803d" stroke-width="8" fill="none" stroke-linecap="round"/>
+  <!-- Mouth -->
+  <path d="M 188 260 Q 256 300 324 260" stroke="#15803d" stroke-width="8" fill="none" stroke-linecap="round"/>
 
   <!-- Nostrils -->
-  <ellipse cx="234" cy="245" rx="10" ry="6" fill="#15803d"/>
-  <ellipse cx="278" cy="245" rx="10" ry="6" fill="#15803d"/>
+  <ellipse cx="234" cy="240" rx="10" ry="6" fill="#15803d"/>
+  <ellipse cx="278" cy="240" rx="10" ry="6" fill="#15803d"/>
 
   <!-- Front feet -->
-  <ellipse cx="130" cy="415" rx="42" ry="22" fill="#16a34a"/>
-  <ellipse cx="382" cy="415" rx="42" ry="22" fill="#16a34a"/>
+  <ellipse cx="130" cy="408" rx="42" ry="22" fill="#16a34a"/>
+  <ellipse cx="382" cy="408" rx="42" ry="22" fill="#16a34a"/>
+
+  <!-- Graduation cap (mortarboard) -->
+  <!-- Cap base / band around head -->
+  <rect x="148" y="82" width="216" height="28" rx="8" fill="#1a1a2e"/>
+  <!-- Cap top (flat board) -->
+  <rect x="118" y="58" width="276" height="30" rx="6" fill="#111827"/>
+  <!-- Tassel string -->
+  <line x1="394" y1="73" x2="418" y2="115" stroke="#fbbf24" stroke-width="5" stroke-linecap="round"/>
+  <!-- Tassel end -->
+  <circle cx="418" cy="120" r="10" fill="#fbbf24"/>
+  <line x1="413" y1="128" x2="408" y2="148" stroke="#fbbf24" stroke-width="3"/>
+  <line x1="418" y1="130" x2="418" y2="150" stroke="#fbbf24" stroke-width="3"/>
+  <line x1="423" y1="128" x2="428" y2="148" stroke="#fbbf24" stroke-width="3"/>
 </svg>

@@ -9,10 +9,10 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'icon.svg', 'apple-touch-icon-180x180.png'],
       manifest: {
-        name: 'Politrain',
+        name: 'Politrain — skok po skoku',
         short_name: 'Politrain',
-        description: 'AI-тренажёр польского языка',
-        theme_color: '#1e40af',
+        description: 'AI-тренажёр польского языка — skok po skoku',
+        theme_color: '#dc2626',
         background_color: '#ffffff',
         display: 'standalone',
         start_url: '/',
