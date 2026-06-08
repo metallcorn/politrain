@@ -1,8 +1,12 @@
 import { useState, useMemo } from 'react'
+import { motion } from 'framer-motion'
 import Button from '../ui/Button'
 import WordHintText from './WordHintText'
 import HintButton from './HintButton'
 import ExerciseResult from './ExerciseResult'
+
+// Spring for tiles flying between zones + remaining tiles reflowing
+const TILE_SPRING = { type: 'spring', stiffness: 500, damping: 34 }
 
 function normalize(s) {
   return (s || '').toLowerCase().trim()
@@ -58,7 +62,7 @@ export default function LetterTilesBlank({ exercise, onAnswer, result, loading }
     onAnswer({ user_answer: '', hint_used: hintUsed })
   }
 
-  const tileBase = 'w-11 h-11 rounded-xl text-base font-bold border-2 transition-all active:scale-95 flex items-center justify-center'
+  const tileBase = 'w-11 h-11 rounded-xl text-base font-bold border-2 transition-colors flex items-center justify-center'
 
   return (
     <div className="flex flex-col gap-4">
@@ -80,35 +84,43 @@ export default function LetterTilesBlank({ exercise, onAnswer, result, loading }
       </div>
 
       {/* Answer zone — fixed min-height so button doesn't jump */}
-      <div className="min-h-16 border-2 border-dashed border-primary-200 rounded-xl p-3 flex flex-wrap gap-2 content-start bg-primary-50/40">
-        {arranged.length === 0
-          ? <p className="text-gray-400 text-sm self-center">Выбирай буквы снизу...</p>
-          : arranged.map(tile => (
-              <button
-                key={tile.id}
-                onClick={() => unplace(tile)}
-                disabled={submitted}
-                className={`${tileBase} bg-primary-800 text-white border-primary-700 hover:bg-primary-700 disabled:opacity-70`}
-              >
-                {tile.letter}
-              </button>
-            ))
-        }
-      </div>
+      <motion.div layout className="min-h-16 border-2 border-dashed border-primary-200 rounded-xl p-3 flex flex-wrap gap-2 content-start bg-primary-50/40">
+        {arranged.length === 0 && (
+          <p className="text-gray-400 text-sm self-center">Выбирай буквы снизу...</p>
+        )}
+        {arranged.map(tile => (
+          <motion.button
+            key={tile.id}
+            layoutId={`tile-${tile.id}`}
+            layout
+            transition={TILE_SPRING}
+            whileTap={{ scale: 0.88 }}
+            onClick={() => unplace(tile)}
+            disabled={submitted}
+            className={`${tileBase} bg-primary-800 text-white border-primary-700 hover:bg-primary-700 disabled:opacity-70`}
+          >
+            {tile.letter}
+          </motion.button>
+        ))}
+      </motion.div>
 
       {/* Available letters — fixed min-height so layout doesn't collapse */}
-      <div className="min-h-16 flex flex-wrap gap-2 justify-center content-start">
+      <motion.div layout className="min-h-16 flex flex-wrap gap-2 justify-center content-start">
         {available.map(tile => (
-          <button
+          <motion.button
             key={tile.id}
+            layoutId={`tile-${tile.id}`}
+            layout
+            transition={TILE_SPRING}
+            whileTap={{ scale: 0.88 }}
             onClick={() => place(tile)}
             disabled={submitted}
             className={`${tileBase} bg-primary-50 border-primary-300 text-primary-800 hover:bg-primary-100 hover:border-primary-500 disabled:opacity-40`}
           >
             {tile.letter}
-          </button>
+          </motion.button>
         ))}
-      </div>
+      </motion.div>
 
       {!submitted && (
         <div className="sticky bottom-4 flex gap-2">

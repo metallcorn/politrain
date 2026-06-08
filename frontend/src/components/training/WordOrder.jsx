@@ -1,6 +1,10 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
+import { motion } from 'framer-motion'
 import Button from '../ui/Button'
 import ExerciseResult from './ExerciseResult'
+
+// Spring for words flying between zones + remaining words reflowing
+const WORD_SPRING = { type: 'spring', stiffness: 500, damping: 34 }
 
 export default function WordOrder({ exercise, onAnswer, result }) {
   // Support both "[word1, word2]" format and "word1 / word2 / word3" format
@@ -8,32 +12,41 @@ export default function WordOrder({ exercise, onAnswer, result }) {
   const words = bracketMatch
     ? bracketMatch[1].split(/[,/]+/).map((w) => w.trim()).filter(Boolean)
     : exercise.question.split('/').map((w) => w.replace(/\(.*?\)/g, '').replace(/[?.!]$/,'').trim()).filter(Boolean)
+
+  // Stable unique id per word slot (words can repeat → can't key by string/index)
+  const initialTiles = useMemo(
+    () => words.map((w, i) => ({ id: i, word: w })).sort(() => Math.random() - 0.5),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [exercise.question]
+  )
+  const [available, setAvailable] = useState(initialTiles)
   const [arranged, setArranged] = useState([])
-  const [available, setAvailable] = useState([...words].sort(() => Math.random() - 0.5))
   const [submitted, setSubmitted] = useState(false)
 
-  const addWord = (word, idx) => {
+  const addWord = (tile) => {
     if (submitted) return
-    setArranged((a) => [...a, word])
-    setAvailable((a) => a.filter((_, i) => i !== idx))
+    setAvailable((a) => a.filter((t) => t.id !== tile.id))
+    setArranged((a) => [...a, tile])
   }
 
-  const removeWord = (word, idx) => {
+  const removeWord = (tile) => {
     if (submitted) return
-    setAvailable((a) => [...a, word])
-    setArranged((a) => a.filter((_, i) => i !== idx))
+    setArranged((a) => a.filter((t) => t.id !== tile.id))
+    setAvailable((a) => [...a, tile])
   }
 
   const handleSubmit = () => {
     if (arranged.length === 0) return
     setSubmitted(true)
-    onAnswer({ user_answer: arranged.join(' ') })
+    onAnswer({ user_answer: arranged.map((t) => t.word).join(' ') })
   }
 
   const hintMatch = exercise.question.match(/\(([^)]+)\)/)
   const questionText = bracketMatch
     ? exercise.question.replace(/\[.*?\]/, '').trim()
     : (hintMatch?.[1] || exercise.hint || 'Составь предложение из слов:')
+
+  const chipBase = 'px-5 py-3 rounded-xl text-base font-medium transition-colors'
 
   return (
     <div className="flex flex-col gap-4">
@@ -42,32 +55,41 @@ export default function WordOrder({ exercise, onAnswer, result }) {
       </div>
 
       {/* Answer zone — fixed min-height so button doesn't jump */}
-      <div className="min-h-24 border-2 border-dashed border-gray-200 rounded-xl p-3 flex flex-wrap gap-2 content-start bg-gray-50">
+      <motion.div layout className="min-h-24 border-2 border-dashed border-gray-200 rounded-xl p-3 flex flex-wrap gap-2 content-start bg-gray-50">
         {arranged.length === 0 && <p className="text-gray-400 text-sm self-center">Нажимай слова снизу...</p>}
-        {arranged.map((word, i) => (
-          <button
-            key={i}
-            onClick={() => removeWord(word, i)}
-            className="px-5 py-3 bg-primary-800 text-white rounded-xl text-base font-medium hover:bg-primary-700 active:scale-95 transition-all"
+        {arranged.map((tile) => (
+          <motion.button
+            key={tile.id}
+            layoutId={`word-${tile.id}`}
+            layout
+            transition={WORD_SPRING}
+            whileTap={{ scale: 0.92 }}
+            onClick={() => removeWord(tile)}
+            disabled={submitted}
+            className={`${chipBase} bg-primary-800 text-white hover:bg-primary-700 disabled:opacity-70`}
           >
-            {word}
-          </button>
+            {tile.word}
+          </motion.button>
         ))}
-      </div>
+      </motion.div>
 
       {/* Available words — fixed min-height so layout doesn't collapse as words are picked */}
-      <div className="min-h-24 flex flex-wrap gap-2 content-start">
-        {available.map((word, i) => (
-          <button
-            key={i}
-            onClick={() => addWord(word, i)}
+      <motion.div layout className="min-h-24 flex flex-wrap gap-2 content-start">
+        {available.map((tile) => (
+          <motion.button
+            key={tile.id}
+            layoutId={`word-${tile.id}`}
+            layout
+            transition={WORD_SPRING}
+            whileTap={{ scale: 0.92 }}
+            onClick={() => addWord(tile)}
             disabled={submitted}
-            className="px-5 py-3 bg-white border-2 border-gray-200 rounded-xl text-base font-medium hover:border-primary-400 hover:bg-primary-50 active:scale-95 transition-all disabled:opacity-50"
+            className={`${chipBase} bg-white border-2 border-gray-200 hover:border-primary-400 hover:bg-primary-50 disabled:opacity-50`}
           >
-            {word}
-          </button>
+            {tile.word}
+          </motion.button>
         ))}
-      </div>
+      </motion.div>
 
       {!submitted && (
         <div className="sticky bottom-4">
