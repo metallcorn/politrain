@@ -33,11 +33,10 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-50 to-white p-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-primary-800 rounded-2xl flex items-center justify-center mx-auto mb-4">
-            <span className="text-white font-bold text-2xl">P</span>
-          </div>
+          <img src="/icon.svg" alt="Politrain" className="w-20 h-20 rounded-2xl mx-auto mb-4 shadow-md" />
           <h1 className="text-2xl font-bold text-gray-900">Politrain</h1>
-          <p className="text-gray-500 mt-1">AI-тренажёр польского языка</p>
+          <p className="text-green-600 mt-1 italic font-medium">skok po skoku 🐸</p>
+          <p className="text-gray-400 text-sm mt-0.5">AI-тренажёр польского языка</p>
         </div>
 
         <form onSubmit={handleSubmit} className="card flex flex-col gap-4">

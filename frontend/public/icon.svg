@@ -4,65 +4,62 @@
       <stop offset="0%" stop-color="#86efac"/>
       <stop offset="100%" stop-color="#4ade80"/>
     </linearGradient>
-    <clipPath id="rounded">
-      <rect width="512" height="512" rx="96"/>
-    </clipPath>
   </defs>
 
-  <!-- Polish flag background -->
-  <g clip-path="url(#rounded)">
-    <rect width="512" height="256" fill="#ffffff"/>
-    <rect y="256" width="512" height="256" fill="#dc2626"/>
-    <!-- Slogan in red area -->
-    <text x="256" y="468" text-anchor="middle"
-      font-family="Georgia, serif" font-size="44" font-style="italic"
-      fill="white" opacity="0.92" letter-spacing="1">skok po skoku</text>
-  </g>
+  <!-- Polish flag: white top, red bottom (platform clips to shape) -->
+  <rect width="512" height="256" rx="0" fill="#ffffff"/>
+  <rect y="256" width="512" height="256" fill="#dc2626"/>
+
+  <!-- Rounded overlay to simulate app icon shape -->
+  <rect width="512" height="512" rx="96" fill="none" stroke="#dc2626" stroke-width="0"/>
 
   <!-- Back legs -->
-  <ellipse cx="138" cy="365" rx="72" ry="36" fill="#16a34a" transform="rotate(-30 138 365)"/>
-  <ellipse cx="374" cy="365" rx="72" ry="36" fill="#16a34a" transform="rotate(30 374 365)"/>
+  <ellipse cx="138" cy="368" rx="70" ry="34" fill="#16a34a" transform="rotate(-28 138 368)"/>
+  <ellipse cx="374" cy="368" rx="70" ry="34" fill="#16a34a" transform="rotate(28 374 368)"/>
 
   <!-- Body -->
-  <ellipse cx="256" cy="315" rx="155" ry="118" fill="#22c55e"/>
+  <ellipse cx="256" cy="318" rx="150" ry="115" fill="#22c55e"/>
 
   <!-- Belly -->
-  <ellipse cx="256" cy="330" rx="100" ry="76" fill="url(#belly)"/>
+  <ellipse cx="256" cy="332" rx="96" ry="74" fill="url(#belly)"/>
 
   <!-- Head -->
-  <ellipse cx="256" cy="205" rx="150" ry="115" fill="#22c55e"/>
+  <ellipse cx="256" cy="208" rx="148" ry="112" fill="#22c55e"/>
 
-  <!-- Eyes -->
-  <ellipse cx="178" cy="145" rx="52" ry="50" fill="#22c55e"/>
-  <ellipse cx="334" cy="145" rx="52" ry="50" fill="#22c55e"/>
-  <ellipse cx="178" cy="142" rx="40" ry="38" fill="white"/>
-  <ellipse cx="334" cy="142" rx="40" ry="38" fill="white"/>
-  <circle cx="182" cy="142" r="22" fill="#1a1a2e"/>
-  <circle cx="338" cy="142" r="22" fill="#1a1a2e"/>
-  <circle cx="188" cy="135" r="7" fill="white"/>
-  <circle cx="344" cy="135" r="7" fill="white"/>
+  <!-- Eye bulges -->
+  <ellipse cx="178" cy="148" rx="50" ry="48" fill="#22c55e"/>
+  <ellipse cx="334" cy="148" rx="50" ry="48" fill="#22c55e"/>
+  <!-- Eye whites -->
+  <ellipse cx="178" cy="145" rx="38" ry="36" fill="white"/>
+  <ellipse cx="334" cy="145" rx="38" ry="36" fill="white"/>
+  <!-- Pupils -->
+  <circle cx="182" cy="145" r="20" fill="#111827"/>
+  <circle cx="338" cy="145" r="20" fill="#111827"/>
+  <!-- Shine -->
+  <circle cx="188" cy="138" r="6" fill="white"/>
+  <circle cx="344" cy="138" r="6" fill="white"/>
 
-  <!-- Mouth -->
-  <path d="M 188 260 Q 256 300 324 260" stroke="#15803d" stroke-width="8" fill="none" stroke-linecap="round"/>
+  <!-- Smile -->
+  <path d="M 190 260 Q 256 298 322 260" stroke="#15803d" stroke-width="8" fill="none" stroke-linecap="round"/>
 
   <!-- Nostrils -->
-  <ellipse cx="234" cy="240" rx="10" ry="6" fill="#15803d"/>
-  <ellipse cx="278" cy="240" rx="10" ry="6" fill="#15803d"/>
+  <ellipse cx="235" cy="242" rx="9" ry="5" fill="#15803d"/>
+  <ellipse cx="277" cy="242" rx="9" ry="5" fill="#15803d"/>
 
   <!-- Front feet -->
-  <ellipse cx="130" cy="408" rx="42" ry="22" fill="#16a34a"/>
-  <ellipse cx="382" cy="408" rx="42" ry="22" fill="#16a34a"/>
+  <ellipse cx="132" cy="410" rx="40" ry="20" fill="#16a34a"/>
+  <ellipse cx="380" cy="410" rx="40" ry="20" fill="#16a34a"/>
 
-  <!-- Graduation cap (mortarboard) -->
-  <!-- Cap base / band around head -->
-  <rect x="148" y="82" width="216" height="28" rx="8" fill="#1a1a2e"/>
-  <!-- Cap top (flat board) -->
-  <rect x="118" y="58" width="276" height="30" rx="6" fill="#111827"/>
-  <!-- Tassel string -->
-  <line x1="394" y1="73" x2="418" y2="115" stroke="#fbbf24" stroke-width="5" stroke-linecap="round"/>
-  <!-- Tassel end -->
-  <circle cx="418" cy="120" r="10" fill="#fbbf24"/>
-  <line x1="413" y1="128" x2="408" y2="148" stroke="#fbbf24" stroke-width="3"/>
-  <line x1="418" y1="130" x2="418" y2="150" stroke="#fbbf24" stroke-width="3"/>
-  <line x1="423" y1="128" x2="428" y2="148" stroke="#fbbf24" stroke-width="3"/>
+  <!-- Graduation cap band -->
+  <rect x="152" y="84" width="208" height="26" rx="8" fill="#111827"/>
+  <!-- Cap board -->
+  <rect x="120" y="60" width="272" height="28" rx="5" fill="#111827"/>
+  <!-- Tassel cord -->
+  <line x1="392" y1="74" x2="416" y2="114" stroke="#fbbf24" stroke-width="5" stroke-linecap="round"/>
+  <!-- Tassel ball -->
+  <circle cx="416" cy="120" r="9" fill="#fbbf24"/>
+  <!-- Tassel fringe -->
+  <line x1="411" y1="128" x2="406" y2="146" stroke="#fbbf24" stroke-width="3" stroke-linecap="round"/>
+  <line x1="416" y1="129" x2="416" y2="148" stroke="#fbbf24" stroke-width="3" stroke-linecap="round"/>
+  <line x1="421" y1="128" x2="426" y2="146" stroke="#fbbf24" stroke-width="3" stroke-linecap="round"/>
 </svg>
