@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { vocabApi } from '../../api'
 
 // Splits text into word/space tokens and makes hintable words clickable.
-// wordHints: { "word": "translation" }
+// wordHints: { "word": "translation" } — keys are usually dictionary (lemma) forms.
 // onHintUsed: called once on first click (for -1 XP tracking)
 // saveToVocab: if true, auto-saves clicked word to user vocabulary pool
 export default function WordHintText({ text, wordHints = {}, onHintUsed, saveToVocab = false, className = '' }) {
@@ -15,24 +15,46 @@ export default function WordHintText({ text, wordHints = {}, onHintUsed, saveToV
   const hints = Object.fromEntries(
     Object.entries(wordHints).map(([k, v]) => [k.toLowerCase(), v])
   )
+  const hintKeys = Object.keys(hints)
 
   const tokens = text.split(/(\s+)/)
-
   const normalize = (w) => w.toLowerCase().replace(/[.,!?;:«»"'()[\]…—–]/g, '')
 
+  const commonPrefix = (a, b) => {
+    let i = 0
+    while (i < a.length && i < b.length && a[i] === b[i]) i++
+    return i
+  }
+
+  // Resolve a displayed word to a hint. Exact match first; otherwise stem match —
+  // an inflected form (zupę) shares a long prefix with its lemma key (zupa) and differs
+  // only in the suffix. Requires both ≥4 chars and a shared prefix covering all but ≤3
+  // trailing chars, so unrelated words (samochód vs sukienka) don't false-match.
+  const resolveHint = (word) => {
+    if (!word) return null
+    if (hints[word] !== undefined) return { key: word, translation: hints[word] }
+    for (const k of hintKeys) {
+      const m = Math.min(word.length, k.length)
+      if (m < 4) continue
+      const cp = commonPrefix(word, k)
+      if (cp >= 3 && cp >= m - 3) return { key: k, translation: hints[k] }
+    }
+    return null
+  }
+
   const handleClick = (raw) => {
-    const key = normalize(raw)
-    const translation = hints[key]
-    if (!translation) return
+    const word = normalize(raw)
+    const hit = resolveHint(word)
+    if (!hit) return
     const cleanWord = raw.replace(/[.,!?;:«»"'()[\]…—–]/g, '')
-    setActiveHint(activeHint?.key === key ? null : { key, raw: cleanWord, translation })
+    setActiveHint(activeHint?.word === word ? null : { word, raw: cleanWord, translation: hit.translation })
     if (!hintFired) {
       setHintFired(true)
       onHintUsed?.()
     }
-    if (saveToVocab && !savedWords.has(key)) {
-      setSavedWords(prev => new Set([...prev, key]))
-      vocabApi.learnWord({ word: cleanWord, translation }).catch(() => {})
+    if (saveToVocab && !savedWords.has(word)) {
+      setSavedWords(prev => new Set([...prev, word]))
+      vocabApi.learnWord({ word: cleanWord, translation: hit.translation }).catch(() => {})
     }
   }
 
@@ -41,8 +63,7 @@ export default function WordHintText({ text, wordHints = {}, onHintUsed, saveToV
       <p className={className}>
         {tokens.map((token, i) => {
           if (/^\s+$/.test(token)) return token
-          const key = normalize(token)
-          const hasHint = Boolean(hints[key])
+          const hasHint = Boolean(resolveHint(normalize(token)))
           return (
             <span
               key={i}
@@ -63,7 +84,7 @@ export default function WordHintText({ text, wordHints = {}, onHintUsed, saveToV
           <span className="font-medium text-blue-800">{activeHint.raw}</span>
           <span className="text-gray-400">→</span>
           <span className="text-gray-700">{activeHint.translation}</span>
-          {saveToVocab && savedWords.has(activeHint.key) && (
+          {saveToVocab && savedWords.has(activeHint.word) && (
             <span className="text-xs text-green-600 ml-1" title="Добавлено в словарь">📚</span>
           )}
         </div>

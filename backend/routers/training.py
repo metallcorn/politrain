@@ -104,6 +104,37 @@ def _fix_flashcard_exercise(item: dict) -> dict | None:
     return item
 
 
+_PL_WORD_RE = re.compile(r'[a-ząęóśćźżńł]+', re.IGNORECASE)
+
+def _stem_match(a: str, b: str) -> bool:
+    """True if a and b are the same word modulo Polish inflection (shared prefix, differ only in suffix)."""
+    m = min(len(a), len(b))
+    if m < 4:
+        return a == b
+    cp = 0
+    while cp < len(a) and cp < len(b) and a[cp] == b[cp]:
+        cp += 1
+    return cp >= 3 and cp >= m - 3
+
+def _clean_word_hints(item: dict) -> dict:
+    """Drop word_hints keys that don't correspond to a word actually in the question (typos like
+    'zubierasz' for 'ubierasz', mismatches). Multi-word keys require all their parts present.
+    For translate the question is in the user's language and hints would give away the answer — drop entirely."""
+    wh = item.get("word_hints")
+    if not isinstance(wh, dict) or not wh:
+        return item
+    if item.get("type") == "translate":
+        item["word_hints"] = None
+        return item
+    q_words = [w.lower() for w in _PL_WORD_RE.findall(item.get("question", ""))]
+    def key_ok(key):
+        parts = [p.lower() for p in _PL_WORD_RE.findall(key)]
+        return bool(parts) and all(any(_stem_match(p, qw) for qw in q_words) for p in parts)
+    cleaned = {k: v for k, v in wh.items() if key_ok(k)}
+    item["word_hints"] = cleaned or None
+    return item
+
+
 def _fix_mc_exercise(item: dict) -> dict | None:
     """Ensure multiple_choice correct_answer exactly matches one of the options. Returns None if unfixable."""
     if item.get("type") != "multiple_choice":
@@ -113,9 +144,23 @@ def _fix_mc_exercise(item: dict) -> dict | None:
     if not opts or not ca:
         return None
 
+    opts_stripped = [str(o).strip() for o in opts]
+
+    # Reject exact-duplicate options (e.g. ["ładne","ładne","ładny","ładna"] — two identical choices).
+    seen = [o.lower() for o in opts_stripped]
+    if len(seen) != len(set(seen)):
+        return None
+
+    # Reject when the option list leaked into the question as a parenthetical
+    # (e.g. "Ona ma ___ sukienkę. (ładny, ładna, ładne, ładne)" — meta-annotation, confusing).
+    question = item.get("question", "")
+    for paren in re.findall(r'\(([^)]*)\)', question):
+        listed = [p.strip().lower() for p in re.split(r'[,/]', paren) if p.strip()]
+        if len(listed) >= 2 and sum(1 for o in seen if o in listed) >= 2:
+            return None
+
     # Reject if any option is a strict substring of another option (same words with added commentary).
     # Catches "-ę" vs "-ę (без изменения)" but NOT jabłko/jabłka/jabłku (different endings).
-    opts_stripped = [str(o).strip() for o in opts]
     for i, o1 in enumerate(opts_stripped):
         for j, o2 in enumerate(opts_stripped):
             if i != j and o1 and o1 in o2 and o1 != o2:
@@ -2231,6 +2276,7 @@ async def _generate_topic_pool(user, topic_obj, db: Session, today, count: int):
         if item is None:
             continue
         item = _sanitize_native_fields(item, user.native_language)
+        item = _clean_word_hints(item)
         if _norm(item.get("question", "")) in seen_qs:
             continue
         content = json.dumps(item)
@@ -2546,6 +2592,7 @@ async def _generate_daily_pool(user, db: Session, today, count: int):
             if item is None:
                 continue
             item = _sanitize_native_fields(item, user.native_language)
+            item = _clean_word_hints(item)
             if _norm(item.get("question", "")) in seen_qs:
                 continue
             validated.append(item)
@@ -2635,6 +2682,7 @@ async def _generate_bonus_pool(user, db: Session, today, count: int):
             if item is None:
                 continue
             item = _sanitize_native_fields(item, user.native_language)
+            item = _clean_word_hints(item)
             if _norm(item.get("question", "")) in seen_qs:
                 continue
             validated.append(item)
