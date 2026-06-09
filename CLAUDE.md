@@ -733,6 +733,9 @@ frontend/src/
 | Дневная сессия короткая при сбое Mistral | session_length по умолчанию 15 | Изменено: short=10, standard=20, long=25; дефолт=20 |
 | multiple_choice пользователь запоминает позицию ответа | options хранятся в фиксированном порядке | `random.shuffle(ex["options"])` при каждой отдаче сессии (перед return) |
 | multiple_choice answer виден в вопросе | Мистраль генерит мета-вопрос "Что происходит с X в контексте Y kolegę?" | В GRAMMAR_EXERCISES_PROMPT: запрет мета-вопросов; вопрос должен быть польским предложением с ___ |
+| word_hints есть, но слово НЕ подчёркивается | Ключ — лемма (zupa), в тексте склонённая форма (zupę); `WordHintText` матчил точно | Stem-matching в WordHintText: общий префикс, различие только в суффиксе (≤3 симв), оба ≥4 букв — `resolveHint()` |
+| multiple_choice: дубль вариантов / варианты в скобках вопроса | `_fix_mc_exercise` ловил только подстроки | Дополнен: точные дубли options → None; список вариантов в скобках вопроса (совпадает с ≥2 options) → None |
+| word_hints с опечаткой/мусором (zubierasz) | Mistral путает форму ключа | `_clean_word_hints`: ключ должен матчить слово вопроса по stem (многословные — все части); translate → word_hints=None (вариант C: хинт выдал бы ответ) |
 | vocabulary синоним не принимается | translation_ru содержит только один вариант | Обновить `vocabulary.translation_ru` через " / " разделитель; `_check_answer` уже поддерживает split по ' / ' |
 | UserTopicProgress не создаётся для new/bonus | Запись создавалась только при явном открытии темы | Ответ на new/bonus с topic_id создаёт запись автоматически через db.add + db.flush |
 | Тема выбирается случайно каждый раз | _select_topics_for_generation без приоритета уровня | Сортировка по (level_idx, score_asc): сначала A0, потом A1...; B1 только когда ≥60% A0-current done |
