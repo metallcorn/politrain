@@ -1198,6 +1198,15 @@ async def submit_answer(
                         )
                 else:
                     is_correct, diacritic_hint = _check_answer(body.user_answer, correct_answer)
+                    # order_words: Polish word order is largely free — if the user used
+                    # exactly the same words in a different order, let Mistral judge it
+                    if not is_correct and ex_type == "order_words":
+                        ref = correct_answer.split(' / ')[0].strip()
+                        if _same_word_multiset(body.user_answer, ref):
+                            is_correct = await _check_word_order(
+                                body.user_answer, ref,
+                                content.get("translation", ""), current_user
+                            )
 
                 de.is_completed = True
                 de.is_correct = is_correct
@@ -1404,6 +1413,12 @@ async def submit_answer(
                 )
         else:
             is_correct, diacritic_hint = _check_answer(body.user_answer, correct_answer)
+            if not is_correct and exercise.type == "order_words":
+                ref = correct_answer.split(' / ')[0].strip()
+                if _same_word_multiset(body.user_answer, ref):
+                    is_correct = await _check_word_order(
+                        body.user_answer, ref, "", current_user
+                    )
 
         if exercise.topic_id:
             progress = db.query(models.UserTopicProgress).filter(
@@ -1817,23 +1832,66 @@ def session_rating(
 async def _check_translation(user_answer: str, correct_answer: str, question: str, user) -> bool:
     if user_answer.strip().lower() == correct_answer.strip().lower():
         return True
+    prompt = prompts.TRANSLATION_CHECK_PROMPT.format(
+        level=user.level,
+        native_language=user.native_language,
+        source_text=question,
+        user_answer=user_answer,
+        correct_answer=correct_answer,
+    )
+    # large first; if it fails (429 during generation bursts is common) fall back to small —
+    # never silently mark a possibly-correct answer wrong because of an API hiccup
+    for model_name in ("mistral-large-latest", "mistral-small-latest"):
+        try:
+            raw = await mistral.simple_prompt(
+                system="You are a Polish language checker. Respond only with JSON.",
+                user=prompt,
+                temperature=0.1,
+                max_tokens=200,
+                retries=2,
+                model=model_name,
+                purpose="translation_check",
+                user_id=user.id,
+            )
+            result = await mistral.parse_json_response(raw)
+            return result.get("correct", False)
+        except Exception:
+            continue
+    # Both models unavailable: degraded check — same words in any order counts as correct
+    # (word order is free in Polish; this at least doesn't punish reordering)
+    return sorted(_strip(w) for w in user_answer.split()) == \
+           sorted(_strip(w.rstrip('.?!,;')) for w in correct_answer.split())
+
+
+async def _check_word_order(user_answer: str, correct_answer: str, translation: str, user) -> bool:
+    """Lenient order_words check: same words, different order — ask Mistral if the
+    user's order is also grammatical/natural Polish (word order is largely free)."""
     try:
         raw = await mistral.simple_prompt(
             system="You are a Polish language checker. Respond only with JSON.",
-            user=prompts.TRANSLATION_CHECK_PROMPT.format(
-                level=user.level,
-                native_language=user.native_language,
-                source_text=question,
-                user_answer=user_answer,
+            user=prompts.WORD_ORDER_CHECK_PROMPT.format(
                 correct_answer=correct_answer,
+                user_answer=user_answer,
+                translation=translation or "",
             ),
             temperature=0.1,
-            max_tokens=200,
+            max_tokens=100,
+            retries=2,
+            model="mistral-small-latest",
+            purpose="order_check",
+            user_id=user.id,
         )
         result = await mistral.parse_json_response(raw)
-        return result.get("correct", False)
+        return bool(result.get("correct", False))
     except Exception:
         return False
+
+
+def _same_word_multiset(user_answer: str, correct_answer: str) -> bool:
+    """True when both strings contain the same words (ignoring order/case/punctuation)."""
+    u = sorted(_strip(w.rstrip('.?!,;')) for w in (user_answer or "").split() if w.strip())
+    c = sorted(_strip(w.rstrip('.?!,;')) for w in (correct_answer or "").split() if w.strip())
+    return bool(u) and u == c
 
 
 async def _ensure_vocab_pool(user, db: Session, threshold: int = 20, batch: int = 30):

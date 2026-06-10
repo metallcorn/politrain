@@ -14,6 +14,22 @@ _DB_PATH = os.path.join(os.path.dirname(__file__), "..", "politrain.db")
 # Limit concurrent Mistral calls to avoid rate limiting when many batches fire at once
 _API_SEMAPHORE = asyncio.Semaphore(3)
 
+# Mistral enforces a requests-per-second limit (429 code 1300). The semaphore allows
+# 3 concurrent calls but they all START simultaneously → instant 429 → fallback to small
+# (worse quality). Space out request starts globally; in-flight requests still overlap.
+_PACE_LOCK = asyncio.Lock()
+_MIN_REQUEST_INTERVAL = 1.0  # seconds between request starts
+_last_request_at = 0.0
+
+
+async def _pace_request():
+    global _last_request_at
+    async with _PACE_LOCK:
+        wait = _last_request_at + _MIN_REQUEST_INTERVAL - time.monotonic()
+        if wait > 0:
+            await asyncio.sleep(wait)
+        _last_request_at = time.monotonic()
+
 
 def _log_call(model: str, purpose: str | None, user_id: int | None,
               input_tokens: int, output_tokens: int, success: bool, duration_ms: int,
@@ -60,6 +76,7 @@ async def chat_completion(
     async with _API_SEMAPHORE:
         async with httpx.AsyncClient(timeout=timeout) as client:
             for attempt in range(retries):
+                await _pace_request()
                 t0 = time.monotonic()
                 try:
                     response = await client.post(MISTRAL_API_URL, json=payload, headers=headers)

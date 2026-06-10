@@ -430,6 +430,24 @@ for i, e in enumerate(exs, 1):
 Не докапываться до единичных стилистических нюансов — только системные ошибки.
 Единичные плохие упражнения — удалять из БД напрямую (`DELETE FROM daily_exercises WHERE id = X`).
 
+### 19. Лояльная проверка order_words (свободный порядок слов)
+```bash
+cd /home/politrain/politrain_code/backend && env $(cat ../.env | grep -v '^#' | xargs) venv/bin/python3 -c "
+import asyncio, sys; sys.path.insert(0, '.')
+from routers.training import _check_word_order, _same_word_multiset
+class U: id=2; level='A1'; native_language='ru'
+print('multiset:', _same_word_multiset('po pracy wychodzę z domu', 'Wychodzę z domu po pracy.'))
+async def main():
+    for ua, expect in [('Po pracy wychodzę z domu', True), ('Wychodzę domu z po pracy', False)]:
+        got = await _check_word_order(ua, 'Wychodzę z domu po pracy.', 'Я выхожу из дома после работы.', U())
+        print('OK' if got == expect else 'FAIL', ua, '→', got)
+asyncio.run(main())
+"
+# Ожидаем: multiset=True; валидная перестановка → True; оторванные предлоги → False
+# Срабатывает в submit_answer только если _same_word_multiset (те же слова) и строгая проверка не прошла
+# В mistral_call_logs: purpose='order_check' (small); проверка перевода: purpose='translation_check'
+```
+
 ---
 
 ## Прямые запросы к БД
@@ -483,6 +501,7 @@ backend/
                      IDIOM_FLASHCARD_PROMPT — flashcard-идиомы отдельным ТОПИК-FREE батчем (_batch_idiom): реальные польские идиомы из знаний Мистраля, НЕ привязаны к грамматической теме (привязка порождала выдуманный мусор); глагол обязателен; пул+дедуп как у всех; идиомы НЕ получают topic badge
                      IDIOM_DRILL_PROMPT — fill_blank/letter_tiles из УЖЕ известных пользователю идиом (UserKnownExpression)
                      VOCAB_GENERATION_PROMPT, TRANSLATION_CHECK_PROMPT,
+                     WORD_ORDER_CHECK_PROMPT — лояльная проверка order_words (те же слова, другой порядок): пошаговый алгоритм + примеры,
                      CHAT_SYSTEM_PROMPT и др.
   routers/
     training.py    — сессии (daily/errors/new/bonus/vocab/topic), ответы, статистика,
@@ -536,6 +555,7 @@ backend/
   services/
     mistral.py     — обёртка над Mistral API;
                      `_API_SEMAPHORE = asyncio.Semaphore(3)` — максимум 3 параллельных вызова (защита от rate limit при 7 батчах);
+                     `_pace_request()` — глобальный интервал 1с между стартами запросов (лимит Mistral — req/sec, code 1300; семафор сам по себе не спасает от одновременного старта);
                      `_log_call()` пишет model/purpose/tokens/duration/success/**error_message** в mistral_call_logs через raw sqlite3
     gamification.py — XP, стрики, достижения;
                        XP_RANKS — 25 рангов (Новичок I→Эксперт V, 0→128000 XP);
@@ -768,3 +788,6 @@ frontend/src/
 | flashcard не идиома (zielone drzewo, czerwony) | Слабый валидатор перекрывал строгий (дубль) | Слитый `_fix_flashcard_exercise`: <2 слов или ≤3 слов без глагола (`_PL_VERB_ENDINGS`) → None |
 | learn-word слово показывается как "⚠️ Ошибка" / в работе над ошибками | `correct_streak=0` одинаков и у «ответили неверно», и у «только что добавили»; SM2 при неверном сбрасывает repetitions=0 → не различить по repetitions | `last_reviewed` ставится при каждом ответе; errors/vocab/stats разводят: NULL→new, NOT NULL→error |
 | Блок результата задания отличается между типами | Копипаст result-блока в 8 компонентах | Общий `ExerciseResult` (+`HintButton`); TranslatePhrase/Flashcard свои (обоснованно) |
+| 429 при генерации даже с семафором=3 | Семафор пускает 3 вызова ОДНОВРЕМЕННО, а лимит Mistral — запросы/сек (code 1300) → мгновенный 429 → fallback small → хуже качество | `_pace_request()` в mistral.py — глобальный интервал 1с между СТАРТАМИ запросов (in-flight перекрываются) |
+| translate: верный ответ помечен ошибкой | `_check_translation` ловил 429 во время генерации → `except → return False` | Цепочка: large → small → деградация (мультимножество слов); purpose="translation_check" в логах |
+| order_words: валидный другой порядок не принят | Строгое сравнение строк, а порядок слов в польском свободный | `_check_word_order` (mistral-small, WORD_ORDER_CHECK_PROMPT) — вызывается если слова совпадают (`_same_word_multiset`), но порядок другой; промт с пошаговым алгоритмом (предлог+сущ, nie+глагол) и примерами |
