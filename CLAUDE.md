@@ -15,7 +15,8 @@ AI-тренажёр польского языка. FastAPI + SQLite бэкенд
 - **Frontend**: React 18, Vite, Tailwind CSS, Zustand, Axios (`baseURL: '/api/v1'`)
 - **AI**: Mistral API — `mistral-large-latest` для генерации упражнений (до 7 батчей через asyncio.gather, НО ограничены `_API_SEMAPHORE=3` одновременными вызовами во избежание rate limit; timeout=60с, fallback → small), `mistral-small-latest` только для словаря; каждый вызов логируется в `mistral_call_logs` с токенами, duration и `error_message`
 - **PWA**: `vite-plugin-pwa` + Workbox service worker; иконки из `public/icon.svg` через `@vite-pwa/assets-generator`; HTTPS на `politrain.metallcorn.online` (Let's Encrypt); autoUpdate режим
-- **Деплой**: nginx reverse proxy (`proxy_read_timeout 90s` — обязательно!), uvicorn, systemd (сервис не настроен — запускается вручную)
+- **Деплой**: nginx reverse proxy (`proxy_read_timeout 90s` — обязательно!), uvicorn под **systemd user-сервисом** `politrain` (Restart=always, переживает ребут — Linger=yes); юниты в `deploy/`, установлены в `~/.config/systemd/user/`; лог по-прежнему `/tmp/uvicorn.log`
+- **Бэкапы БД**: `politrain-backup.timer` ежедневно в 03:30 → `backend/scripts/backup_db.py` (online backup API + integrity_check + gzip) → `~/backups/`, хранится 14 копий
 
 ---
 
@@ -30,10 +31,12 @@ AI-тренажёр польского языка. FastAPI + SQLite бэкенд
 
 ### Перезапуск бэкенда (ОДНА команда — одно подтверждение)
 ```bash
-kill $(ps aux | grep uvicorn | grep -v grep | awk '{print $2}') 2>/dev/null ; sleep 1 ; cd /home/politrain/politrain_code/backend ; env $(cat /home/politrain/politrain_code/.env | grep -v '^#' | xargs) venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000 > /tmp/uvicorn.log 2>&1 & sleep 3 ; curl -s http://localhost:8000/health
+XDG_RUNTIME_DIR=/run/user/$(id -u) systemctl --user restart politrain ; sleep 3 ; curl -s http://localhost:8000/health
 ```
-Всё через `;` (не `&&`) — не останавливается если kill ничего не нашёл. `cd` внутри одного вызова Bash меняет CWD для всей команды.
-При ошибке смотреть: `cat /tmp/uvicorn.log`
+Бэкенд — systemd user-сервис `politrain` (env из `.env` через EnvironmentFile, Restart=always).
+`XDG_RUNTIME_DIR` обязателен — без него `systemctl --user` из неинтерактивного шелла не работает.
+При ошибке смотреть: `cat /tmp/uvicorn.log` или `XDG_RUNTIME_DIR=/run/user/$(id -u) journalctl --user -u politrain -n 50 --no-pager`
+НЕ запускать uvicorn вручную — порт займётся и systemd-сервис не сможет подняться.
 
 ### Сборка фронтенда
 ```bash
@@ -476,6 +479,21 @@ print(_require_word_hints({'type':'letter_tiles','question':'Lubię pić ___.','
 # в mistral_call_logs purpose='idiom_drill'
 ```
 
+### 22. systemd-сервис и бэкапы БД
+```bash
+export XDG_RUNTIME_DIR=/run/user/$(id -u)
+systemctl --user is-active politrain politrain-backup.timer
+# Ожидаем: active / active
+systemctl --user list-timers politrain-backup.timer --no-pager
+# Ожидаем: NEXT = ближайшие 03:30
+ls -la ~/backups/ | tail -3
+# Ожидаем: свежие politrain-YYYYMMDD-HHMMSS.db.gz (хранится 14)
+# Ручной бэкап + проверка восстановления:
+python3 /home/politrain/politrain_code/backend/scripts/backup_db.py
+# Ожидаем: "backup ok: ... KB"; скрипт сам делает PRAGMA integrity_check, при сбое exit 1
+# Восстановление: gunzip -k ~/backups/politrain-XXX.db.gz; затем подменить backend/politrain.db (при остановленном сервисе)
+```
+
 ---
 
 ## Прямые запросы к БД
@@ -758,7 +776,9 @@ frontend/src/
 | daily_pool таймаут | mistral-large не укладывается в 25с для генерации упражнений | Батчи по 2-3 упражнения, каждый timeout=60с, fallback на mistral-small; параллелизм ограничен семафором=3 |
 | nginx обрывает соединение | proxy_read_timeout по умолчанию 60с, Mistral генерирует до 63с | proxy_read_timeout 90s в /etc/nginx/sites-available/default (требует root) |
 | Таблица в статье не рендерится | Кастомный parseTable требует непустой заголовок | Всегда писать осмысленные названия колонок в первой строке таблицы |
-| Бэкенд не видит изменения | Не перезапущен после правки | Всегда kill + restart |
+| Бэкенд не видит изменения | Не перезапущен после правки | `XDG_RUNTIME_DIR=/run/user/$(id -u) systemctl --user restart politrain` |
+| Порт 8000 занят, сервис не стартует | uvicorn запущен вручную параллельно с systemd-сервисом | Никогда не запускать uvicorn руками; убить ручной процесс, `systemctl --user restart politrain` |
+| systemctl --user: Failed to connect to bus | Нет XDG_RUNTIME_DIR в неинтерактивном шелле | Всегда префикс `XDG_RUNTIME_DIR=/run/user/$(id -u)` |
 | Фронт не видит изменения | Не пересобран | `npm run build` |
 | Токен генерируется с ошибкой | `datetime.utcnow()` deprecated | Использовать `datetime.now(datetime.timezone.utc)` |
 | review_ai не появляется в daily | next_review заполняется только при правильном ответе на new/bonus | Для теста: вручную `UPDATE daily_exercises SET next_review='2026-01-01' WHERE ...` |

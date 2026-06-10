@@ -1,0 +1,6 @@
+[Unit]
+Description=Politrain SQLite backup (online, gzip, rotation)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /home/politrain/politrain_code/backend/scripts/backup_db.py
