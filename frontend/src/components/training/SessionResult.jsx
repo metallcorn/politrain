@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import Button from '../ui/Button'
 import { useNavigate } from 'react-router-dom'
 import { CheckCircle, Zap, Flame, Sparkles, Clock, Star } from 'lucide-react'
-import { trainingApi } from '../../api'
+import { trainingApi, profileApi } from '../../api'
+import DailyGoalRing from './DailyGoalRing'
 
 export default function SessionResult({ correct, total, xpEarned, streak, mode, topic, sessionDuration, exerciseIds }) {
   const navigate = useNavigate()
@@ -13,12 +14,31 @@ export default function SessionResult({ correct, total, xpEarned, streak, mode, 
   const [comment, setComment] = useState('')
   const [ratingSubmitted, setRatingSubmitted] = useState(false)
   const autoSubmitTimer = useRef(null)
+  // Daily XP goal ring: XP is awarded per answer, so dashboard already includes
+  // this session — before = xp_today - xpEarned, no backend change needed
+  const [dailyXp, setDailyXp] = useState(null)
 
   useEffect(() => {
     if (sessionDuration > 0) {
       trainingApi.sessionComplete({ duration_seconds: sessionDuration }).catch(() => {})
     }
+    profileApi.dashboard()
+      .then((res) => {
+        const t = res.data?.today
+        if (t?.goal > 0) {
+          setDailyXp({
+            goal: t.goal,
+            after: t.xp_today || 0,
+            before: Math.max(0, (t.xp_today || 0) - (xpEarned || 0)),
+          })
+        }
+      })
+      .catch(() => {})
   }, [])
+
+  // Ring takes center stage while the goal is being chased; once the norm was
+  // already done before this session it moves to a compact spot at the bottom
+  const goalWasDoneBefore = dailyXp && dailyXp.before >= dailyXp.goal
 
   const submitRating = (stars, text) => {
     if (ratingSubmitted) return
@@ -61,9 +81,13 @@ export default function SessionResult({ correct, total, xpEarned, streak, mode, 
 
   return (
     <div className="flex flex-col items-center gap-6 py-8 animate-scale-in">
-      <div className="w-20 h-20 rounded-full bg-primary-50 flex items-center justify-center">
-        <CheckCircle size={48} className="text-primary-800" />
-      </div>
+      {dailyXp && !goalWasDoneBefore ? (
+        <DailyGoalRing before={dailyXp.before} after={dailyXp.after} goal={dailyXp.goal} />
+      ) : (
+        <div className="w-20 h-20 rounded-full bg-primary-50 flex items-center justify-center">
+          <CheckCircle size={48} className="text-primary-800" />
+        </div>
+      )}
 
       <div className="text-center">
         <h2 className="text-2xl font-bold text-gray-900">Сессия завершена!</h2>
@@ -103,6 +127,11 @@ export default function SessionResult({ correct, total, xpEarned, streak, mode, 
           </div>
         )}
       </div>
+
+      {/* Daily norm already done before this session — compact ring, second lap fills */}
+      {dailyXp && goalWasDoneBefore && (
+        <DailyGoalRing before={dailyXp.before} after={dailyXp.after} goal={dailyXp.goal} compact />
+      )}
 
       {/* Session rating */}
       <div className="w-full card flex flex-col items-center gap-2">

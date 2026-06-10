@@ -448,6 +448,17 @@ asyncio.run(main())
 # В mistral_call_logs: purpose='order_check' (small); проверка перевода: purpose='translation_check'
 ```
 
+### 20. Кольцо дневной цели на экране завершения сессии
+```bash
+# Данные для кольца — из dashboard (бэкенд не менялся, проверяем что поля на месте):
+curl -s "http://localhost:8000/api/v1/profile/dashboard" -H "Authorization: Bearer $TOKEN" | \
+  python3 -c "import sys,json; t=json.load(sys.stdin)['today']; print('goal:', t['goal'], '| xp_today:', t['xp_today'])"
+# Ожидаем: goal > 0, xp_today >= 0
+# UI (вручную): завершить сессию → если xp_today < goal было до сессии — большое кольцо по центру,
+# анимация заполнения; пересечение цели → конфетти; если цель уже была выполнена — маленькое кольцо
+# внизу с бейджем «цель ×2»
+```
+
 ---
 
 ## Прямые запросы к БД
@@ -691,6 +702,7 @@ frontend/src/
 - LetterTilesBlank показывает `exercise.translation` под вопросом (серый курсив)
 - LetterTilesBlank + WordOrder: анимация сборки через framer-motion `layout`/`layoutId` (FLIP) — плитка «летит» из зоны в зону, остальные плавно перестраиваются. Каждая плитка `motion.button` с `layoutId={tile-${id}}` (общий layout = полёт) + `layout` (reflow) + spring + `whileTap`. WordOrder использует `{id, word}` объекты (слова могут повторяться → нельзя key по строке/индексу). НЕ ставить `transition-all`/`active:scale-95` на motion-кнопки — конфликт с transform framer; press через `whileTap`
 - SessionResult: звёздный рейтинг 1-5 + опциональный комментарий → `POST /training/session-rating`; exerciseIds передаются из TrainingSessionPage
+- SessionResult: кольцо дневной XP-цели (`DailyGoalRing`) — фетчит `profileApi.dashboard()`, `before = xp_today - xpEarned` (XP начисляется по ходу сессии, бэкенд не нужен); цель не выполнена → большое кольцо по центру (вместо галочки), анимация заполнения before→after; пересёк цель этой сессией → конфетти (framer-motion, без зависимостей); цель была выполнена ДО сессии → компактное кольцо внизу, заполняется «второй круг» (lap = floor(before/goal), бейдж «цель ×N»)
 - TrainingPage: бонус всегда виден — задизаблен (div вместо Link, opacity-50) пока не выполнена дневная; `Promise.allSettled` вместо `Promise.all` для устойчивости к частичным ошибкам API
 - TopicDetailPage: skeleton вместо Spinner при загрузке; `last_result` из get_lesson предзаполняет exerciseResults; после ответа exerciseResults[ex.id] обновляется локально
 - TrainingPage: режим "Повторение" (mode=practice) — только упражнения с is_correct=True (AI: new/bonus/review_ai/topic_d за 60 дней + curriculum не освоенные но последний ответ верный); ошибки (is_correct=False) остаются ТОЛЬКО в errors mode; без лимита в день; не считается в today_done
