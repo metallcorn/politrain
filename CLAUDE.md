@@ -459,6 +459,23 @@ curl -s "http://localhost:8000/api/v1/profile/dashboard" -H "Authorization: Bear
 # внизу с бейджем «цель ×2»
 ```
 
+### 21. Обязательные word_hints (letter_tiles формата A + идиомный дрилл)
+```bash
+cd /home/politrain/politrain_code/backend && venv/bin/python3 -c "
+import sys; sys.path.insert(0, '.')
+from routers.training import _require_word_hints
+# формат A (___) без хинтов → отброшено
+print(_require_word_hints({'type':'letter_tiles','question':'Lubię pić ___.','word_hints':None}) is None)
+# формат B (spelling, без ___) без хинтов → ОК
+print(_require_word_hints({'type':'letter_tiles','question':'Напиши по-польски: счастье','word_hints':None}) is not None)
+# с хинтами → ОК
+print(_require_word_hints({'type':'letter_tiles','question':'Lubię pić ___.','word_hints':{'lubię':'люблю'}}) is not None)
+"
+# Ожидаем: True / True / True
+# Дрилл идиом: word_hints обязательны для fill_blank И letter_tiles, topic_title='Идиомы',
+# в mistral_call_logs purpose='idiom_drill'
+```
+
 ---
 
 ## Прямые запросы к БД
@@ -510,7 +527,8 @@ backend/
                      LETTER_TILES_PROMPT — letter_tiles отдельно (одно слово, дедуплицированные буквы-карточки)
                      WORD_DEFINITION_PROMPT — word_definition отдельно (загадка по-польски → пользователь пишет слово)
                      IDIOM_FLASHCARD_PROMPT — flashcard-идиомы отдельным ТОПИК-FREE батчем (_batch_idiom): реальные польские идиомы из знаний Мистраля, НЕ привязаны к грамматической теме (привязка порождала выдуманный мусор); глагол обязателен; пул+дедуп как у всех; идиомы НЕ получают topic badge
-                     IDIOM_DRILL_PROMPT — fill_blank/letter_tiles из УЖЕ известных пользователю идиом (UserKnownExpression)
+                     IDIOM_DRILL_PROMPT — fill_blank/letter_tiles из УЖЕ известных пользователю идиом (UserKnownExpression);
+                       translation и word_hints ОБЯЗАТЕЛЬНЫ (без них отбраковка); упражнения получают topic_title="Идиомы"
                      VOCAB_GENERATION_PROMPT, TRANSLATION_CHECK_PROMPT,
                      WORD_ORDER_CHECK_PROMPT — лояльная проверка order_words (те же слова, другой порядок): пошаговый алгоритм + примеры,
                      CHAT_SYSTEM_PROMPT и др.
@@ -803,3 +821,4 @@ frontend/src/
 | 429 при генерации даже с семафором=3 | Семафор пускает 3 вызова ОДНОВРЕМЕННО, а лимит Mistral — запросы/сек (code 1300) → мгновенный 429 → fallback small → хуже качество | `_pace_request()` в mistral.py — глобальный интервал 1с между СТАРТАМИ запросов (in-flight перекрываются) |
 | translate: верный ответ помечен ошибкой | `_check_translation` ловил 429 во время генерации → `except → return False` | Цепочка: large → small → деградация (мультимножество слов); purpose="translation_check" в логах |
 | order_words: валидный другой порядок не принят | Строгое сравнение строк, а порядок слов в польском свободный | `_check_word_order` (mistral-small, WORD_ORDER_CHECK_PROMPT) — вызывается если слова совпадают (`_same_word_multiset`), но порядок другой; промт с пошаговым алгоритмом (предлог+сущ, nie+глагол) и примерами |
+| Польское предложение без переводов слов (кликом) | IDIOM_DRILL_PROMPT явно ставил word_hints/translation=null; дрилл-путь шёл мимо _clean_word_hints; letter_tiles формата A иногда без хинтов | `_require_word_hints` — отбраковка letter_tiles с ___ без word_hints (формат B «Напиши по-польски» легитимно без них); дрилл: word_hints обязательны для ОБОИХ типов + полная цепочка валидации + topic_title="Идиомы" |

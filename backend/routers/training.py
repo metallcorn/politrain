@@ -135,6 +135,17 @@ def _clean_word_hints(item: dict) -> dict:
     return item
 
 
+def _require_word_hints(item: dict | None) -> dict | None:
+    """letter_tiles in sentence format (___) without clickable word translations is a UX dead
+    end — the user can't understand the Polish sentence (feedback #93). Spelling format
+    ('Напиши по-польски: …', no ___) has a native-language question and needs no hints.
+    Runs AFTER _clean_word_hints so exercises whose hints were all bogus are rejected too."""
+    if item and item.get("type") == "letter_tiles" and "___" in item.get("question", "") \
+            and not item.get("word_hints"):
+        return None
+    return item
+
+
 def _fix_mc_exercise(item: dict) -> dict | None:
     """Ensure multiple_choice correct_answer exactly matches one of the options. Returns None if unfixable."""
     if item.get("type") != "multiple_choice":
@@ -1654,6 +1665,8 @@ async def _generate_idiom_drill_exercises(user, db: Session, today, max_count: i
             timeout=30.0,
             retries=1,
             model="mistral-small-latest",
+            purpose="idiom_drill",
+            user_id=user.id,
         )
         generated = await mistral.parse_json_response(raw)
     except Exception as e:
@@ -1668,8 +1681,15 @@ async def _generate_idiom_drill_exercises(user, db: Session, today, max_count: i
         item = _fix_letter_tiles_exercise(item) if item else None
         if item is None:
             continue
+        item = _sanitize_native_fields(item, user.native_language)
+        item = _clean_word_hints(item)
+        # Drill sentences are pure Polish with no other aid — word_hints are mandatory
+        # for BOTH types here, otherwise the user can't understand the sentence (feedback #93)
+        if not item.get("word_hints"):
+            continue
         if _norm(item.get("question", "")) in seen_qs:
             continue
+        item["topic_title"] = "Идиомы"  # session header badge
         db.add(models.DailyExercise(
             user_id=user.id, date=today,
             exercise_type=item.get("type"),
@@ -2335,6 +2355,9 @@ async def _generate_topic_pool(user, topic_obj, db: Session, today, count: int):
             continue
         item = _sanitize_native_fields(item, user.native_language)
         item = _clean_word_hints(item)
+        item = _require_word_hints(item)
+        if item is None:
+            continue
         if _norm(item.get("question", "")) in seen_qs:
             continue
         content = json.dumps(item)
@@ -2651,6 +2674,9 @@ async def _generate_daily_pool(user, db: Session, today, count: int):
                 continue
             item = _sanitize_native_fields(item, user.native_language)
             item = _clean_word_hints(item)
+            item = _require_word_hints(item)
+            if item is None:
+                continue
             if _norm(item.get("question", "")) in seen_qs:
                 continue
             validated.append(item)
@@ -2741,6 +2767,9 @@ async def _generate_bonus_pool(user, db: Session, today, count: int):
                 continue
             item = _sanitize_native_fields(item, user.native_language)
             item = _clean_word_hints(item)
+            item = _require_word_hints(item)
+            if item is None:
+                continue
             if _norm(item.get("question", "")) in seen_qs:
                 continue
             validated.append(item)

@@ -332,7 +332,8 @@ LETTER_TILES_PROMPT = (
     "- Ответ НЕ присутствует в question ни в какой форме\n"
     "- hint: грамматическая категория без самого ответа (напр. \"biernik od herbata\")\n"
     "- translation: полное предложение на {native_language} с самим словом вместо ___ (не спойлер — буквы уже видны)\n"
-    "- word_hints: ключевые польские слова → {native_language}\n\n"
+    "- word_hints: ОБЯЗАТЕЛЬНО — каждое значимое польское слово предложения (кроме ответа) → {native_language}.\n"
+    "  Задание формата A без word_hints будет ОТБРОШЕНО валидатором — пользователь не поймёт предложение.\n\n"
     "ФОРМАТ B — чистое написание слова (spelling):\n"
     "- question: 'Напиши по-польски: [слово на {native_language}]' — БЕЗ ___\n"
     "- correct_answer: польское слово\n"
@@ -510,10 +511,13 @@ IDIOM_DRILL_PROMPT = """
 - hint: короткое описание выражения на {native_language}, НЕ раскрывающее ответ.
 - explanation: что значит выражение, как используется — на {native_language}.
 - question: живое предложение с пропуском, не просто выражение с ___.
+- translation: ОБЯЗАТЕЛЬНО — перевод полного предложения на {native_language} с самим словом вместо ___.
+- word_hints: ОБЯЗАТЕЛЬНО — каждое значимое польское слово предложения (кроме ответа) → {native_language}.
+  Без word_hints задание будет ОТБРОШЕНО — пользователь не сможет понять предложение.
 
 Ответь ТОЛЬКО валидным JSON массивом (по одному объекту на каждое выражение):
 [
-  {{"type": "fill_blank", "question": "On zawsze ma ___ w nosie — nigdy nie jest w dobrym humorze.", "correct_answer": "muchy", "options": null, "hint": "фразеологизм «не в духе»", "explanation": "«mieć muchy w nosie» — быть раздражённым, не в настроении", "translation": null, "word_hints": null}},
-  {{"type": "letter_tiles", "question": "Nie masz ___ na plecach — nie możesz wszystkiego kontrolować.", "correct_answer": "oczu", "options": null, "hint": "поговорка о невозможности видеть всё", "explanation": "«nie mieć oczu na plecach» — нельзя уследить за всем сразу", "translation": null, "word_hints": null}}
+  {{"type": "fill_blank", "question": "On zawsze ma ___ w nosie — nigdy nie jest w dobrym humorze.", "correct_answer": "muchy", "options": null, "hint": "фразеологизм «не в духе»", "explanation": "«mieć muchy w nosie» — быть раздражённым, не в настроении", "translation": "У него всегда мухи в носу — он никогда не в хорошем настроении.", "word_hints": {{"zawsze": "всегда", "nosie": "нос (в носу)", "nigdy": "никогда", "dobrym": "хорошем", "humorze": "настроении"}}}},
+  {{"type": "letter_tiles", "question": "Nie masz ___ na plecach — nie możesz wszystkiego kontrolować.", "correct_answer": "oczu", "options": null, "hint": "поговорка о невозможности видеть всё", "explanation": "«nie mieć oczu na plecach» — нельзя уследить за всем сразу", "translation": "У тебя нет глаз на спине — ты не можешь всё контролировать.", "word_hints": {{"masz": "имеешь", "plecach": "спина (на спине)", "możesz": "можешь", "wszystkiego": "всего", "kontrolować": "контролировать"}}}}
 ]
 """
