@@ -252,12 +252,15 @@ _MODAL_VERBS_PL = {
     "trzeba", "warto", "wolno", "można",
     "staram", "stara", "staramy",
 }
+# correct_answer is compared via _strip (diacritics removed) — the set must be in the
+# same form, otherwise "muszę"/"mogę"/"chcę" never match and the check is dead code
+_MODAL_VERBS_NORM = {_strip(m) for m in _MODAL_VERBS_PL}
 
 
 def _check_modal_has_infinitive(item: dict) -> bool:
     """If correct_answer is a modal verb, the question must contain an infinitive (-ć/-c)."""
     correct = _strip(item.get("correct_answer", "").rstrip(".?!,;"))
-    if correct not in _MODAL_VERBS_PL:
+    if correct not in _MODAL_VERBS_NORM:
         return True  # not a modal — no check needed
     question = item.get("question", "")
     # An infinitive ends in -ć or -c (e.g. przyjść, być, pracować, móc)
@@ -325,6 +328,9 @@ def _fix_judge_sentence_exercise(item: dict) -> dict | None:
         return item
     if ca in ("no", "нет", "неверно", "неправильно", "incorrect", "wrong"):
         item["correct_answer"] = "false"
+        # same rule as literal "false": no explanation → user can't learn why it's wrong
+        if not item.get("explanation"):
+            return None
         return item
     return None
 

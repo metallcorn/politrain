@@ -61,7 +61,13 @@ print(tok)
 
 ## Быстрый тест (ОДНА команда — одно подтверждение)
 
-Запускать после рестарта. Покрывает всё основное — health, stats, сессии, словарь, жалобы.
+**Сначала pytest** (валидаторы, 109 тестов, <1с) — запускать ПЕРЕД рестартом при любой правке validators.py/generation.py/training.py:
+```bash
+cd /home/politrain/politrain_code/backend && venv/bin/pytest -q
+```
+При добавлении валидатора или фикса бага в валидаторе — СРАЗУ дописать тест в `tests/test_validators.py` (регрессии из реальных жалоб — указывать номер репорта в комментарии).
+
+Затем — API-тест после рестарта. Покрывает всё основное — health, stats, сессии, словарь, жалобы.
 
 ```bash
 SECRET=$(grep SECRET_KEY /home/politrain/politrain_code/.env | cut -d= -f2) ; TOKEN=$(python3 -c "import jwt,datetime; print(jwt.encode({'sub':'2','exp':datetime.datetime.now(datetime.timezone.utc)+datetime.timedelta(hours=1)},'$SECRET',algorithm='HS256'))") ; echo "=health=" && curl -s http://localhost:8000/health && echo && echo "=stats=" && curl -s "http://localhost:8000/api/v1/training/stats" -H "Authorization: Bearer $TOKEN" | python3 -c "import sys,json;d=json.load(sys.stdin);print('total:',d.get('total_exercises'),'today:',d.get('today_done'),'/',d.get('today_total'),'errors:',d.get('errors'))" && echo "=sessions=" && curl -s "http://localhost:8000/api/v1/training/session?mode=errors" -H "Authorization: Bearer $TOKEN" | python3 -c "import sys,json;d=json.load(sys.stdin);exs=d.get('exercises',[]);src={};[src.update({e.get('source'):src.get(e.get('source'),0)+1}) for e in exs];print('errors:',len(exs),src)" && curl -s "http://localhost:8000/api/v1/vocabulary/stats" -H "Authorization: Bearer $TOKEN" | python3 -c "import sys,json;d=json.load(sys.stdin);print('vocab:',d)" && echo "=reports=" && curl -s "http://localhost:8000/api/v1/admin/reports?resolved=false" -H "Authorization: Bearer $TOKEN" | python3 -c "import sys,json;r=json.load(sys.stdin);print('open reports:',len(r));[print(' #'+str(x['id']),x.get('comment','')[:50]) for x in r]"
@@ -583,7 +589,7 @@ backend/
                      GET /profile/leaderboard — таблица лидеров: ±5 пользователей по xp_today, my_rank, total_users
     chat.py        — чат с AI собеседником
   services/
-    validators.py  — ЧИСТЫЕ функции валидации (без БД и API — легко покрыть pytest):
+    validators.py  — ЧИСТЫЕ функции валидации (без БД и API), покрыты pytest (`backend/tests/test_validators.py`, 109 тестов, `venv/bin/pytest -q`):
                      _norm/_strip/_check_answer, _validate_type, _sanitize_native_fields,
                      вся цепочка _fix_* (mc, fill_blank, letter_tiles, translate, judge, order_words,
                      word_definition, flashcard), _stem_match/_clean_word_hints/_require_word_hints,
@@ -846,7 +852,8 @@ frontend/src/
 | explanation — dict вместо строки | Старые упражнения с `{"literal":..., "real":...}` → Pydantic 500 при ответе | `_sanitize_native_fields` нулит нестроковые поля; answer handler: `isinstance(raw_expl, str)` guard |
 | completed_at=NULL у старых ошибок | Колонка добавлена позже → ошибки невидимы в errors mode (фильтр IS NOT NULL) | Бэкфилл: `UPDATE daily_exercises SET completed_at=datetime(date\|\|' 12:00:00') WHERE is_completed=1 AND completed_at IS NULL` |
 | Flashcard VocabCard не принимает ответ с дефисом | normalize() не убирает дефисы → "интернет-магазин" ≠ "интернет магазин" | В Flashcard.jsx normalize добавлен `.replace(/-/g, ' ')` |
-| Валидатор не срабатывает хотя написан | Две функции с одинаковым именем — вторая (def ниже) перекрывает первую в Python; строгий `_fix_flashcard_exercise` был мёртв | ОДНО определение на функцию. Проверка: `grep '^def ' routers/training.py \| sed 's/(.*//' \| sort \| uniq -d` |
+| Валидатор не срабатывает хотя написан | Две функции с одинаковым именем — вторая (def ниже) перекрывает первую в Python; строгий `_fix_flashcard_exercise` был мёртв | ОДНО определение на функцию; pytest `test_no_duplicate_toplevel_defs` ловит автоматически по всем модулям |
+| Сравнение с множеством слов не срабатывает | `_strip()` убирает диакритики, а в множестве слова С диакритиками — "muszę" никогда не матчился с `_MODAL_VERBS_PL` (мёртвый код, нашёл pytest) | Нормализовать множество той же функцией: `_MODAL_VERBS_NORM = {_strip(m) for m in _MODAL_VERBS_PL}` |
 | flashcard не идиома (zielone drzewo, czerwony) | Слабый валидатор перекрывал строгий (дубль) | Слитый `_fix_flashcard_exercise`: <2 слов или ≤3 слов без глагола (`_PL_VERB_ENDINGS`) → None |
 | learn-word слово показывается как "⚠️ Ошибка" / в работе над ошибками | `correct_streak=0` одинаков и у «ответили неверно», и у «только что добавили»; SM2 при неверном сбрасывает repetitions=0 → не различить по repetitions | `last_reviewed` ставится при каждом ответе; errors/vocab/stats разводят: NULL→new, NOT NULL→error |
 | Блок результата задания отличается между типами | Копипаст result-блока в 8 компонентах | Общий `ExerciseResult` (+`HintButton`); TranslatePhrase/Flashcard свои (обоснованно) |
