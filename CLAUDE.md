@@ -551,31 +551,14 @@ backend/
                      WORD_ORDER_CHECK_PROMPT — лояльная проверка order_words (те же слова, другой порядок): пошаговый алгоритм + примеры,
                      CHAT_SYSTEM_PROMPT и др.
   routers/
-    training.py    — сессии (daily/errors/new/bonus/vocab/topic), ответы, статистика,
-                     генерация пулов (_generate_exercises(topics=None) — параллельные батчи через asyncio.gather:
-                     когда topics передан — N grammar батчей (fill_blank+mc per-topic) + N lexical батчей (flashcard+translate+order_words per-topic) + 3 глобальных (judge/tiles/word_def);
-                     grammar и lexical упражнения тегируются topic_slug+topic_title из своего батча — тема ВСЕГДА соответствует содержимому;
-                     judge_sentence/letter_tiles/word_definition генерируются глобально без темы (сложно привязать к конкретному правилу);
-                     без topics — 5 глобальных батчей без тегов тем,
-                     _select_topics_for_generation(user, db, n=2) — выбирает темы для генерации:
-                       приоритет: (level_idx, score_asc) — нижний уровень + низкий прогресс первыми;
-                       когда ≥60% A0..current_level done → подмешивает 1 тему следующего уровня;
-                       7-дневная ротация: исключает темы недавно покрытые в new/bonus, fallback на recent,
-                     _save_to_pool(item, level, topic_id, db) — сохраняет упражнение в ExercisePool; UNIQUE по question_norm; возвращает pool_id;
-                       если запись уже есть без topic_id → обновляет topic_id и topic_title в content (ретроактивная тегировка),
-                     _pool_draw(db, user_id, level, count) — берёт из пула упражнения не виденные пользователем (NOT IN subquery на pool_exercise_id),
-                     _generate_daily_pool, _generate_bonus_pool — пул-приоритет: сначала _pool_draw, затем Mistral только для дефицита;
-                       ВСЕ валидированные упражнения сохраняются в пул (не только deficit штук) — пул пополняется максимально;
-                       в DailyExercise идут только первые deficit упражнений из сгенерированных;
-                       bonus использует challenge_level = _next_level(user.level),
-                       вызывают _select_topics_for_generation, передают topics в _generate_exercises, сохраняют topic_id в DailyExercise,
-                     _generate_topic_exercises_for_daily — 2 слабые темы × 2 задания, source='topic_d', параллельно с основным пулом,
-                     _generate_topic_pool — fill_blank+mc строго по теме с текстом статьи,
-                     _ensure_vocab_pool, _seen_questions — дедупликация по истории,
-                     _generate_idiom_drill_exercises — drill из UserKnownExpression,
+    training.py    — ТОЛЬКО роутер (~1240 строк после распила): сессии (daily/errors/new/bonus/vocab/topic/practice),
+                     submit_answer (включая _check_translation и _check_word_order — async Mistral-проверки ответов),
+                     статистика, жалобы, _vocab_card_content/_mastered_exercise_ids — импортируются из services.generation,
                      POST /training/explain — AI-объяснение ответа (кешируется в AIExplanationCache); принимает translation для перевода предложения,
                      POST /training/session-complete — накопление total_training_seconds + ачивки,
-                     POST /training/session-rating — оценка сессии 1-5 + комментарий + список exercise_ids)
+                     POST /training/session-rating — оценка сессии 1-5 + комментарий + список exercise_ids;
+                     ВАЖНО: все имена из validators/generation РЕэкспортируются через import в training.py —
+                     `from routers.training import X` продолжает работать (тестовые сниппеты не ломать)
     topics.py      — темы, уроки, упражнения по темам
     vocabulary.py  — статистика словаря (/vocabulary/stats);
                      POST /vocabulary/learn-word — добавляет слово в словарь пользователя из подсказки:
@@ -600,6 +583,35 @@ backend/
                      GET /profile/leaderboard — таблица лидеров: ±5 пользователей по xp_today, my_rank, total_users
     chat.py        — чат с AI собеседником
   services/
+    validators.py  — ЧИСТЫЕ функции валидации (без БД и API — легко покрыть pytest):
+                     _norm/_strip/_check_answer, _validate_type, _sanitize_native_fields,
+                     вся цепочка _fix_* (mc, fill_blank, letter_tiles, translate, judge, order_words,
+                     word_definition, flashcard), _stem_match/_clean_word_hints/_require_word_hints,
+                     _same_word_multiset; ПРАВИЛО: новые валидаторы добавлять СЮДА, не в training.py
+    generation.py  — генерация Mistral + пул + выбор тем (НЕ импортирует из routers.* — circular import):
+                     _generate_exercises(topics=None) — параллельные батчи через asyncio.gather:
+                     когда topics передан — N grammar батчей (fill_blank+mc per-topic) + N lexical батчей (translate+order_words per-topic) + глобальные (judge/tiles/word_def/idiom);
+                     grammar и lexical упражнения тегируются topic_slug+topic_title из своего батча — тема ВСЕГДА соответствует содержимому;
+                     judge_sentence/letter_tiles/word_definition генерируются глобально, тема через round-robin;
+                     без topics — глобальные батчи без тегов тем,
+                     _select_topics_for_generation(user, db, n=2) — выбирает темы для генерации:
+                       приоритет: (level_idx, score_asc) — нижний уровень + низкий прогресс первыми;
+                       когда ≥60% A0..current_level done → подмешивает 1 тему следующего уровня;
+                       7-дневная ротация: исключает темы недавно покрытые в new/bonus, fallback на recent,
+                     _select_interest_themes(prefs, n=2) — ротация тем интересов через курсор prefs.recent_themes,
+                     _save_to_pool(item, level, topic_id, db) — сохраняет упражнение в ExercisePool; UNIQUE по question_norm; возвращает pool_id;
+                       если запись уже есть без topic_id → обновляет topic_id и topic_title в content (ретроактивная тегировка),
+                     _pool_draw(db, user_id, level, count) — берёт из пула упражнения не виденные пользователем (NOT IN subquery на pool_exercise_id),
+                     _generate_daily_pool, _generate_bonus_pool — пул-приоритет: сначала _pool_draw, затем Mistral только для дефицита;
+                       ВСЕ валидированные упражнения сохраняются в пул (не только deficit штук) — пул пополняется максимально;
+                       в DailyExercise идут только первые deficit упражнений из сгенерированных;
+                       bonus использует challenge_level = _next_level(user.level),
+                       вызывают _select_topics_for_generation, передают topics в _generate_exercises, сохраняют topic_id в DailyExercise,
+                     _generate_topic_exercises_for_daily — 2 слабые темы × 2 задания, source='topic_d', параллельно с основным пулом,
+                     _generate_topic_pool — fill_blank+mc строго по теме с текстом статьи,
+                     _ensure_vocab_pool, _seen_questions — дедупликация по истории,
+                     _generate_idiom_drill_exercises — drill из UserKnownExpression (word_hints+translation обязательны, topic_title="Идиомы"),
+                     _vocab_card_content/_VOCAB_TILES_GRADUATE, _mastered_exercise_ids, _eligible_vocab_levels/_LEVEL_ORDER
     mistral.py     — обёртка над Mistral API;
                      `_API_SEMAPHORE = asyncio.Semaphore(3)` — максимум 3 параллельных вызова (защита от rate limit при 7 батчах);
                      `_pace_request()` — глобальный интервал 1с между стартами запросов (лимит Mistral — req/sec, code 1300; семафор сам по себе не спасает от одновременного старта);
@@ -761,7 +773,7 @@ frontend/src/
 | Счётчик ошибок завышен | Старые DailyExercise с `completed_at=NULL` | Фильтр `IS NOT NULL` + 14 дней |
 | Mobile overflow | flex item без `min-w-0` | Добавить `min-w-0` на flex child |
 | Освоенные повторяются | topic exercises не фильтровали mastered | `_mastered_exercise_ids()` в topics.py |
-| Импорт между роутерами | `from routers.training import X` → ModuleNotFoundError | Дублировать функцию или вынести в utils |
+| Импорт между роутерами | `from routers.training import X` → ModuleNotFoundError | Выносить общий код в `services/` (validators.py, generation.py); services НЕ импортируют из routers.* |
 | Неизвестный тип упражнения | Мистраль генерирует "situational" и т.п. | `_validate_type()` отбрасывает всё кроме 8 допустимых (включая letter_tiles и word_definition) |
 | Упражнения идут по порядку | Пользователь запоминает последовательность | `random.shuffle(exercises)` перед return в session endpoint |
 | order_words слова в правильном порядке | Мистраль генерирует слова в том же порядке что и ответ | `_fix_order_words_exercise` перемешивает слова после валидации |
