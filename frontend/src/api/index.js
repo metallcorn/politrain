@@ -14,13 +14,32 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (res) => res,
   (err) => {
-    if (err.response?.status === 401) {
+    const url = err.config?.url || ''
+    const isAuthCall = url.includes('/auth/login') || url.includes('/auth/register')
+    // Session-expiry handling only for NON-auth calls: an expired token on a
+    // background request clears it and bounces to /login. A 401 on the login
+    // request itself is "wrong password" — let the page show its own error,
+    // never hard-reload (that caused the flicker/loop). Also skip the redirect
+    // if we're already on an auth page.
+    if (err.response?.status === 401 && !isAuthCall) {
       localStorage.removeItem('token')
-      window.location.href = '/login'
+      const p = window.location.pathname
+      if (!p.startsWith('/login') && !p.startsWith('/register')) {
+        window.location.href = '/login'
+      }
     }
     return Promise.reject(err)
   }
 )
+
+// Human-readable reason for a failed request. Distinguishes a real server
+// response (e.g. 401 wrong password) from a request that never reached the
+// server — typically a stale service worker / offline cache eating the fetch,
+// which used to surface as a misleading "wrong password" toast.
+export function errorMessage(err, fallback = 'Что-то пошло не так') {
+  if (err.response) return err.response.data?.detail || fallback
+  return 'Сервер не отвечает. Обнови страницу (Ctrl+Shift+R); если не помогло — очисти данные сайта в настройках браузера.'
+}
 
 export default api
 

@@ -26,6 +26,10 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        // Never let the SPA navigation fallback touch the API — /api must always
+        // hit the network (a stale SW eating /auth/login was the cause of
+        // "can't log in / wrong password" with correct credentials).
+        navigateFallbackDenylist: [/^\/api/],
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,

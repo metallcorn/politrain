@@ -767,6 +767,9 @@ frontend/src/
 - AdminPage: вкладка "API" с MistralUsageChart; вкладки — ternary цепочка (`tab === 'X' ? ... : tab === 'Y' ? ...`), НЕ if/else
 - Interest themes для генерации: `min(2, len(themes))` — не больше 2 тем интереса за батч (снижает пространство решений для Mistral)
 - PWA: `public/icon.svg` → источник для всех иконок; пересборка иконок: `npx @vite-pwa/assets-generator --config pwa-assets.config.js`; service worker автообновляется (registerType: 'autoUpdate')
+- PWA SW НИКОГДА не должен трогать `/api`: `workbox.navigateFallbackDenylist: [/^\/api/]` в vite.config.js — иначе застрявший SW глотает POST /auth/login → пользователь не может войти при верном пароле
+- Обработка ошибок запросов: `errorMessage(err, fallback)` из `api/index.js` — различает ответ сервера (показывает `detail`) и сетевой сбой/SW (показывает «Сервер не отвечает, обнови страницу / очисти данные сайта»). Использовать в catch вместо `err.response?.data?.detail || '...'` — иначе сетевой сбой выглядит как «неверный пароль»
+- Axios 401-интерсептор: редиректит на /login ТОЛЬКО для не-auth запросов (истёкший токен на фоновом вызове) и НЕ на auth-страницах; 401 на самом /auth/login = неверный пароль, обрабатывает страница (без `window.location.href` — он давал мигание/петлю)
 
 ---
 
@@ -857,6 +860,7 @@ frontend/src/
 | flashcard не идиома (zielone drzewo, czerwony) | Слабый валидатор перекрывал строгий (дубль) | Слитый `_fix_flashcard_exercise`: <2 слов или ≤3 слов без глагола (`_PL_VERB_ENDINGS`) → None |
 | learn-word слово показывается как "⚠️ Ошибка" / в работе над ошибками | `correct_streak=0` одинаков и у «ответили неверно», и у «только что добавили»; SM2 при неверном сбрасывает repetitions=0 → не различить по repetitions | `last_reviewed` ставится при каждом ответе; errors/vocab/stats разводят: NULL→new, NOT NULL→error |
 | Блок результата задания отличается между типами | Копипаст result-блока в 8 компонентах | Общий `ExerciseResult` (+`HintButton`); TranslatePhrase/Flashcard свои (обоснованно) |
+| «Неверный логин/пароль» при верном пароле | Застрявший старый service worker глотает POST /auth/login → запрос не доходит до сервера → `err.response` пуст → показывалась запасная фраза «неверный пароль» | На сервере проверить: вход через `curl https://.../api/v1/auth/login` отдаёт токен, в логах бэкенда НЕТ попыток с устройства юзера → это клиентский SW. Фикс кода: `navigateFallbackDenylist: [/^\/api/]` + `errorMessage()` различает сетевой сбой. Юзеру: инкогнито (нет SW) или DevTools→Application→Service Workers→Unregister (чистка кэша SW НЕ убивает) |
 | 429 при генерации даже с семафором=3 | Семафор пускает 3 вызова ОДНОВРЕМЕННО, а лимит Mistral — запросы/сек (code 1300) → мгновенный 429 → fallback small → хуже качество | `_pace_request()` в mistral.py — глобальный интервал 1с между СТАРТАМИ запросов (in-flight перекрываются) |
 | translate: верный ответ помечен ошибкой | `_check_translation` ловил 429 во время генерации → `except → return False` | Цепочка: large → small → деградация (мультимножество слов); purpose="translation_check" в логах |
 | order_words: валидный другой порядок не принят | Строгое сравнение строк, а порядок слов в польском свободный | `_check_word_order` (mistral-small, WORD_ORDER_CHECK_PROMPT) — вызывается если слова совпадают (`_same_word_multiset`), но порядок другой; промт с пошаговым алгоритмом (предлог+сущ, nie+глагол) и примерами |

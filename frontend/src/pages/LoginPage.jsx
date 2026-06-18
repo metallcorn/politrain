@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuthStore, useUIStore } from '../store'
+import { errorMessage } from '../api'
 import Button from '../components/ui/Button'
 import Input from '../components/ui/Input'
 
@@ -23,7 +24,7 @@ export default function LoginPage() {
         navigate('/dashboard')
       }
     } catch (err) {
-      addToast(err.response?.data?.detail || 'Неверный логин или пароль', 'error')
+      addToast(errorMessage(err, 'Неверный логин или пароль'), 'error')
     } finally {
       setLoading(false)
     }

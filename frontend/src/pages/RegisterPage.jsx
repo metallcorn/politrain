@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuthStore, useUIStore } from '../store'
+import { errorMessage } from '../api'
 import Button from '../components/ui/Button'
 import Input from '../components/ui/Input'
 
@@ -20,7 +21,7 @@ export default function RegisterPage() {
       await register(username, password, lang)
       navigate('/onboarding')
     } catch (err) {
-      addToast(err.response?.data?.detail || 'Ошибка регистрации', 'error')
+      addToast(errorMessage(err, 'Ошибка регистрации'), 'error')
     } finally {
       setLoading(false)
     }
