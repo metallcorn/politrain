@@ -247,6 +247,18 @@ class TestFixFillBlank:
                 "correct_answer": "muszę"}
         assert _fix_fill_blank_exercise(item) is not None
 
+    def test_twoword_answer_reusing_question_word_rejected(self):
+        # reports #189/#195: "Ten film jest ___ (interesujący)" answer "bardziej interesujący"
+        item = {"type": "fill_blank", "question": "Ten film jest ___ (interesujący) niż poprzedni.",
+                "correct_answer": "bardziej interesujący"}
+        assert _fix_fill_blank_exercise(item) is None
+
+    def test_singleword_answer_with_parenthetical_base_kept(self):
+        # single-word answer differing from the printed base form is fine
+        item = {"type": "fill_blank", "question": "Lubię ___ (czarny) kawę.",
+                "correct_answer": "czarną"}
+        assert _fix_fill_blank_exercise(item) is not None
+
 
 class TestModalInfinitive:
     def test_non_modal_always_ok(self):
@@ -400,6 +412,17 @@ class TestFixWordDefinition:
 
     def test_blank_rejected(self):
         item = {"type": "word_definition", "question": "To jest ___.", "correct_answer": "kawa"}
+        assert _fix_word_definition_exercise(item) is None
+
+    def test_underscore_joined_answer_rejected(self):
+        # report #182: reflexive joined with underscore "mycie_się"
+        item = {"type": "word_definition", "question": "Codzienny rytuał rano.",
+                "correct_answer": "mycie_się"}
+        assert _fix_word_definition_exercise(item) is None
+
+    def test_multiword_answer_rejected(self):
+        item = {"type": "word_definition", "question": "Codzienny rytuał rano.",
+                "correct_answer": "mycie się"}
         assert _fix_word_definition_exercise(item) is None
 
 

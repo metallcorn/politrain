@@ -131,17 +131,28 @@ def _save_to_pool(item: dict, level: str, topic_id, db: Session):
     return pool_ex.id
 
 
-def _pool_draw(db: Session, user_id: int, level: str, count: int) -> list:
-    """Draw up to count unseen active exercises from the shared pool for this user at this level."""
+def _pool_draw(db: Session, user_id: int, level: str, count: int, seen_norms: set | None = None) -> list:
+    """Draw up to count unseen active exercises from the shared pool for this user at this level.
+
+    Excludes by pool_exercise_id (entries already served from the pool) AND by question_norm
+    against `seen_norms` — a question the user met via a NON-pool DailyExercise (deficit
+    generation, older entries) isn't caught by id exclusion and would resurface as "new"
+    (reports #194, feedback #99)."""
     seen_sq = db.query(models.DailyExercise.pool_exercise_id).filter(
         models.DailyExercise.user_id == user_id,
         models.DailyExercise.pool_exercise_id.isnot(None),
     ).subquery()
-    return db.query(models.ExercisePool).filter(
+    q = db.query(models.ExercisePool).filter(
         models.ExercisePool.level == level,
         models.ExercisePool.is_active == True,
         models.ExercisePool.id.notin_(seen_sq),
-    ).order_by(func.random()).limit(count).all()
+    )
+    if seen_norms:
+        # over-fetch then filter in Python by normalized question text
+        candidates = q.order_by(func.random()).limit(count * 4).all()
+        out = [p for p in candidates if (p.question_norm or "") not in seen_norms]
+        return out[:count]
+    return q.order_by(func.random()).limit(count).all()
 
 
 def _seen_questions(user_id: int, db: Session, limit: int = 60) -> set:
@@ -671,7 +682,49 @@ async def _generate_exercises(user, count: int, interest_themes_str: str, level:
             _batch(prompts.WORD_DEFINITION_PROMPT, word_def_count, "word_def"),
             _batch_idiom(idiom_count),
         )
-    return grammar_gen + lexical_gen + judge_gen + tiles_gen + word_def_gen + idiom_gen
+    all_items = grammar_gen + lexical_gen + judge_gen + tiles_gen + word_def_gen + idiom_gen
+    return await _verify_judge_false(all_items, user)
+
+
+async def _verify_judge_false(items: list, user) -> list:
+    """Variant B post-validation: drop judge_sentence 'false' items whose claimed error
+    a strict second pass can't confirm. Mistral routinely marks correct sentences false
+    with incoherent explanations (reports #185/186/190/191/193). One batched cheap call."""
+    suspects = [
+        it for it in items
+        if it.get("type") == "judge_sentence"
+        and str(it.get("correct_answer", "")).lower() == "false"
+    ]
+    if not suspects:
+        return items
+    payload = [
+        {"id": i, "sentence": it.get("question", ""), "claimed_error": it.get("explanation", "")}
+        for i, it in enumerate(suspects)
+    ]
+    try:
+        raw = await mistral.simple_prompt(
+            system="You are a strict Polish grammar checker. Respond only with JSON.",
+            user=prompts.JUDGE_VERIFY_PROMPT.format(items=json.dumps(payload, ensure_ascii=False)),
+            temperature=0.0,
+            max_tokens=800,
+            timeout=30.0,
+            retries=1,
+            model="mistral-small-latest",
+            purpose="judge_verify",
+            user_id=user.id,
+        )
+        verdicts = await mistral.parse_json_response(raw)
+        confirmed = {v["id"] for v in verdicts if isinstance(v, dict) and v.get("verdict") == "error"}
+    except Exception as e:
+        print(f"[judge_verify] failed for user {user.id}: {type(e).__name__}: {e}")
+        # On verifier failure, drop ALL false-judge items rather than ship unverified garbage
+        confirmed = set()
+    rejected = {id(suspects[i]) for i in range(len(suspects)) if i not in confirmed}
+    kept = [it for it in items if id(it) not in rejected]
+    dropped = len(items) - len(kept)
+    if dropped:
+        print(f"[judge_verify] dropped {dropped}/{len(suspects)} false-judge items for user {user.id}")
+    return kept
 
 
 async def _generate_topic_pool(user, topic_obj, db: Session, today, count: int):
@@ -1015,7 +1068,7 @@ async def _generate_daily_pool(user, db: Session, today, count: int):
         ))
 
     # Pool-first: serve unseen exercises from shared pool, generate only the deficit
-    pool_drawn = _pool_draw(db, user.id, user.level, ai_target)
+    pool_drawn = _pool_draw(db, user.id, user.level, ai_target, seen_norms=_seen_questions(user.id, db, limit=150))
     pool_ai_added = 0
     for pool_ex in pool_drawn:
         if pool_ai_added >= ai_target:
@@ -1113,7 +1166,7 @@ async def _generate_bonus_pool(user, db: Session, today, count: int):
     topic_id_by_slug = {t.slug: t.id for t in gen_topics}
 
     # Pool-first: serve unseen bonus exercises from shared pool at challenge level
-    pool_drawn = _pool_draw(db, user.id, challenge_level, count)
+    pool_drawn = _pool_draw(db, user.id, challenge_level, count, seen_norms=_seen_questions(user.id, db, limit=150))
     pool_added = 0
     for pool_ex in pool_drawn:
         if pool_added >= count:

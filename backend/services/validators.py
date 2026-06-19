@@ -197,6 +197,17 @@ def _fix_fill_blank_exercise(item: dict) -> dict | None:
     # false positives when a short answer is a substring of another word.
     c_norm = _strip(correct)
     q_norm = _strip(question)
+
+    # Multi-word answer that reuses a word already printed in the question — usually a
+    # parenthetical base form like "Ten film jest ___ (interesujący)" with answer
+    # "bardziej interesujący". The blank is really two words but one is given away, so the
+    # user can't tell the missing word ("bardziej") belongs there (reports #189, #195).
+    if len(correct.split()) >= 2:
+        ans_words = [w for w in re.findall(r'[a-z]+', c_norm) if len(w) >= 4]
+        q_words_norm = re.findall(r'[a-z]+', q_norm)  # strips parens/punctuation
+        if any(any(_stem_match(aw, qw) for qw in q_words_norm) for aw in ans_words):
+            return None
+
     answer_leaked = bool(re.search(r'\b' + re.escape(c_norm) + r'\b', q_norm))
 
     if has_blank and not answer_leaked:
@@ -398,6 +409,10 @@ def _fix_word_definition_exercise(item: dict) -> dict | None:
     if "___" in question:
         return None
     if "/" in correct:
+        return None
+    # Answer must be a single word — Mistral sometimes returns a reflexive joined with an
+    # underscore ("mycie_się") or a space ("mycie się"); tiles/typing expect one token (report #182)
+    if "_" in correct or " " in correct.strip():
         return None
     c_norm = _strip(correct)
     q_norm = _strip(question)
