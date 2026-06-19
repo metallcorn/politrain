@@ -131,6 +131,17 @@ def _save_to_pool(item: dict, level: str, topic_id, db: Session):
     return pool_ex.id
 
 
+def _pool_active(db: Session, pool_id) -> bool:
+    """False when this pool entry exists and was retired (is_active=0) — e.g. by a report.
+    Used to drop a regenerated copy of a reported question before it reaches the user."""
+    if not pool_id:
+        return True
+    row = db.query(models.ExercisePool.is_active).filter(
+        models.ExercisePool.id == pool_id
+    ).first()
+    return bool(row[0]) if row else True
+
+
 def _pool_draw(db: Session, user_id: int, level: str, count: int, seen_norms: set | None = None) -> list:
     """Draw up to count unseen active exercises from the shared pool for this user at this level.
 
@@ -1132,6 +1143,8 @@ async def _generate_daily_pool(user, db: Session, today, count: int):
                 break
             topic_id = topic_id_by_slug.get(item.get("topic_slug"))
             pool_id = _save_to_pool(item, user.level, topic_id, db)
+            if not _pool_active(db, pool_id):
+                continue  # regenerated copy of a reported question — don't serve it
             entries.append(models.DailyExercise(
                 user_id=user.id, date=today,
                 exercise_type=item.get("type", "fill_blank"),
@@ -1225,6 +1238,8 @@ async def _generate_bonus_pool(user, db: Session, today, count: int):
                 break
             topic_id = topic_id_by_slug.get(item.get("topic_slug"))
             pool_id = _save_to_pool(item, challenge_level, topic_id, db)
+            if not _pool_active(db, pool_id):
+                continue  # regenerated copy of a reported question — don't serve it
             db.add(models.DailyExercise(
                 user_id=user.id, date=today,
                 exercise_type=item.get("type", "fill_blank"),

@@ -910,15 +910,30 @@ def report_generated_exercise(
             de.is_completed = True
             de.is_correct = True
             de.completed_at = datetime.utcnow()
-            # Deactivate pool exercise so no other user sees it
+            # Deactivate the reported exercise immediately (review queue) — a single
+            # report pulls it from circulation right away, no 2nd-report threshold.
+            # Collect every affected pool row: the linked entry AND any pool entry with
+            # the same normalized question (the DE often has no pool link, yet the same
+            # phrase lives in the pool as a separate row → it kept resurfacing).
+            affected = {}
             if de.pool_exercise_id:
-                pool_ex = db.query(models.ExercisePool).filter(
+                pe = db.query(models.ExercisePool).filter(
                     models.ExercisePool.id == de.pool_exercise_id
                 ).first()
-                if pool_ex:
-                    pool_ex.report_count = (pool_ex.report_count or 0) + 1
-                    if pool_ex.report_count >= 2:
-                        pool_ex.is_active = False
+                if pe:
+                    affected[pe.id] = pe
+            try:
+                q_norm = _norm(json.loads(de.content).get("question", ""))
+            except Exception:
+                q_norm = None
+            if q_norm:
+                for pe in db.query(models.ExercisePool).filter(
+                    models.ExercisePool.question_norm == q_norm
+                ).all():
+                    affected[pe.id] = pe
+            for pe in affected.values():
+                pe.report_count = (pe.report_count or 0) + 1
+                pe.is_active = False
     elif body.exercise_id:
         ex = db.query(models.Exercise).filter(models.Exercise.id == body.exercise_id).first()
         if ex:
