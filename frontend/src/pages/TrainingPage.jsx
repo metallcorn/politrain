@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { trainingApi, vocabApi } from '../api'
 import Card from '../components/ui/Card'
 import Skeleton from '../components/ui/Skeleton'
-import { Calendar, AlertCircle, Sparkles, Rocket, BookOpen, RefreshCw } from 'lucide-react'
+import { Calendar, AlertCircle, Sparkles, Rocket, BookOpen, RefreshCw, Target } from 'lucide-react'
 
 export default function TrainingPage() {
   const [stats, setStats] = useState(null)
@@ -116,6 +116,17 @@ export default function TrainingPage() {
       color: 'border-teal-100 hover:border-teal-300',
       badge: null,
     },
+    {
+      mode: 'theme',
+      to: '/topics',
+      disabled: false,
+      icon: <Target size={28} className="text-indigo-500" />,
+      title: 'Тренировка по теме',
+      description: 'Выбери тему — ошибки по ней, повторение и новые задания',
+      count: 'Выбрать тему',
+      color: 'border-indigo-100 hover:border-indigo-300',
+      badge: null,
+    },
   ]
 
   return (
@@ -126,7 +137,7 @@ export default function TrainingPage() {
       </div>
 
       <div className="flex flex-col gap-4">
-        {modes.map(({ mode, disabled, icon, title, description, count, color, badge }) => {
+        {modes.map(({ mode, to, disabled, icon, title, description, count, color, badge }) => {
           const card = (
             <Card className={`border-2 transition-colors ${color} relative`}>
               {badge && (
@@ -146,7 +157,7 @@ export default function TrainingPage() {
           )
           return disabled
             ? <div key={mode}>{card}</div>
-            : <Link key={mode} to={`/training/session?mode=${mode}`}>{card}</Link>
+            : <Link key={mode} to={to || `/training/session?mode=${mode}`}>{card}</Link>
         })}
       </div>
 

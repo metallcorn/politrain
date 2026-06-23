@@ -427,31 +427,88 @@ async def get_training_session(
         topic_obj = db.query(models.Topic).filter(models.Topic.slug == topic).first()
         if not topic_obj:
             raise HTTPException(status_code=404, detail="Topic not found")
-        uncompleted = db.query(models.DailyExercise).filter(
+
+        # Theme training (#101): a session for ONE topic mixing the learner's mistakes on
+        # it, items to consolidate, and fresh exercises. No mistakes → more new material.
+        used_de_ids = set()
+
+        # 1) Mistakes on this topic — wrong and not yet fixed (highest priority)
+        topic_errors = db.query(models.DailyExercise).filter(
             models.DailyExercise.user_id == current_user.id,
-            models.DailyExercise.date == today,
-            models.DailyExercise.source == "topic",
             models.DailyExercise.topic_id == topic_obj.id,
-            models.DailyExercise.is_completed == False,
-        ).count()
-        if uncompleted == 0:
-            await _generate_topic_pool(current_user, topic_obj, db, today, count)
-        topic_daily = db.query(models.DailyExercise).filter(
-            models.DailyExercise.user_id == current_user.id,
-            models.DailyExercise.date == today,
-            models.DailyExercise.source == "topic",
-            models.DailyExercise.topic_id == topic_obj.id,
-            models.DailyExercise.is_completed == False,
-        ).all()
-        for de in topic_daily:
+            models.DailyExercise.is_completed == True,
+            models.DailyExercise.is_correct == False,
+            models.DailyExercise.source.in_(["topic", "topic_d", "new", "bonus"]),
+            models.DailyExercise.completed_at.isnot(None),
+        ).order_by(func.random()).limit(count).all()
+        for de in topic_errors:
             try:
                 content = json.loads(de.content)
                 content["daily_exercise_id"] = de.id
-                content["source"] = de.source
+                content["source"] = "error"
                 _enrich(content, de)
                 exercises.append(content)
+                used_de_ids.add(de.id)
             except Exception:
                 pass
+
+        # 2) Consolidation — correctly answered on this topic (capped so "new" dominates
+        #    when there are few/no mistakes)
+        review_cap = max(0, (count - len(exercises)) // 3)
+        if review_cap > 0:
+            topic_reviews = db.query(models.DailyExercise).filter(
+                models.DailyExercise.user_id == current_user.id,
+                models.DailyExercise.topic_id == topic_obj.id,
+                models.DailyExercise.is_completed == True,
+                models.DailyExercise.is_correct == True,
+                models.DailyExercise.source.in_(["topic", "topic_d", "new", "bonus", "review_ai"]),
+            ).order_by(func.random()).limit(review_cap).all()
+            for de in topic_reviews:
+                if de.id in used_de_ids:
+                    continue
+                try:
+                    content = json.loads(de.content)
+                    content["daily_exercise_id"] = de.id
+                    content["source"] = "review"
+                    _enrich(content, de)
+                    exercises.append(content)
+                    used_de_ids.add(de.id)
+                except Exception:
+                    pass
+
+        # 3) New — generate fresh topic exercises to fill the rest of the session
+        remaining = count - len(exercises)
+        if remaining > 0:
+            uncompleted = db.query(models.DailyExercise).filter(
+                models.DailyExercise.user_id == current_user.id,
+                models.DailyExercise.date == today,
+                models.DailyExercise.source == "topic",
+                models.DailyExercise.topic_id == topic_obj.id,
+                models.DailyExercise.is_completed == False,
+            ).count()
+            if uncompleted < remaining:
+                await _generate_topic_pool(current_user, topic_obj, db, today, remaining)
+            topic_new = db.query(models.DailyExercise).filter(
+                models.DailyExercise.user_id == current_user.id,
+                models.DailyExercise.date == today,
+                models.DailyExercise.source == "topic",
+                models.DailyExercise.topic_id == topic_obj.id,
+                models.DailyExercise.is_completed == False,
+            ).limit(remaining).all()
+            for de in topic_new:
+                if de.id in used_de_ids:
+                    continue
+                try:
+                    content = json.loads(de.content)
+                    content["daily_exercise_id"] = de.id
+                    content["source"] = de.source
+                    _enrich(content, de)
+                    exercises.append(content)
+                    used_de_ids.add(de.id)
+                except Exception:
+                    pass
+
+        random.shuffle(exercises)
 
     elif mode == "practice":
         # Review/consolidation: ONLY correctly answered AI exercises from past 60 days.

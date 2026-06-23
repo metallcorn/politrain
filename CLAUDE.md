@@ -644,7 +644,7 @@ backend/
   - `review` — словарные карточки из UserVocabulary по SRS-расписанию + 2 новых слова в день
   - `review_ai` — AI-задания на повторение по SRS (из new/bonus с истёкшим next_review)
   - `vocab` — карточки из режима "Слова" (не входят в daily_done счётчик)
-  - `topic` — AI-сгенерированные задания по конкретной теме правила (не входят в daily_done, ошибки попадают в errors)
+  - `topic` — тренировка по выбранной теме (#101): СМЕШАННАЯ сессия = ошибки по теме (source badge "error") + повторение освоенного по теме (review, capped ~1/3) + новые задания (генерируются _generate_topic_pool). Нет ошибок → больше нового. Вход: TrainingPage «Тренировка по теме» → /topics → тема → кнопка; mode=topic&topic=slug; не входит в daily_done
   - `topic_d` — AI-задания по слабым темам, встроенные в дневной пул (2 темы × 2 упражнения, входят в today_done, обновляют UserTopicProgress)
   - `practice` — микс пройденных AI-упражнений + curriculum слабые места (режим Повторение, без лимита в день, не входит в today_done)
   - SRS поля: `next_review DATE`, `srs_interval_days INT`, `srs_repetitions INT` — SM2 для AI-заданий

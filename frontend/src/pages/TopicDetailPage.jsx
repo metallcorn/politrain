@@ -291,7 +291,7 @@ export default function TopicDetailPage() {
         onClick={() => navigate(`/training/session?mode=topic&topic=${slug}`)}
       >
         <Brain size={18} />
-        Проверить знания (AI-тест)
+        Тренировка по теме (ошибки + повторение + новое)
       </Button>
 
       {!completed ? (
