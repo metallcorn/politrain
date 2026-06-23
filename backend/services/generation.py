@@ -28,13 +28,41 @@ from services.validators import (
     _fix_judge_sentence_exercise,
     _fix_order_words_exercise,
     _fix_word_definition_exercise,
+    _too_similar,
 )
 
 _LEVEL_ORDER = ["A0", "A1", "A2", "B1", "B2", "C1", "C2"]
 
+_VOCAB_CEILING = "B2"  # the app pulls the learner UP; only cap is "harder than B2"
+
 def _eligible_vocab_levels(user_level: str) -> list:
+    """Words to teach as NEW: the user's current level and a 2-step stretch upward,
+    never past B2. An A2 user gets A2/B1/B2 — the engine should pull upward, not cap
+    new vocab at the current level (that left the learner with nothing fresh)."""
     idx = _LEVEL_ORDER.index(user_level) if user_level in _LEVEL_ORDER else 2
-    return _LEVEL_ORDER[:idx + 1]
+    ceil = min(idx + 2, _LEVEL_ORDER.index(_VOCAB_CEILING))
+    return _LEVEL_ORDER[idx:ceil + 1]
+
+
+def _clamp_vocab_level(raw, user_level: str) -> str:
+    """Keep a Mistral-tagged word level within the eligible stretch; else default to current."""
+    lv = (raw or "").strip().upper()
+    return lv if lv in set(_eligible_vocab_levels(user_level)) else user_level
+
+
+# Per-topic emphasis injected into topic generation (lean — only where the default
+# explanation misses a pattern users specifically struggle with).
+_TOPIC_FOCUS = {
+    "prepositions": (
+        "Делай упор на ВЫБОР предлога: нужен ли он и какой. Контрастируй случаи, где в польском "
+        "предлог есть, а в русском нет (czekać NA kogoś, martwić się O kogoś, słuchać kogoś без предлога) "
+        "и какой падеж требует каждый предлог."
+    ),
+    "negation": (
+        "Делай упор на nie + dopełniacz: при отрицании biernik→dopełniacz (mam kota → nie mam kota; "
+        "lubię herbatę → nie lubię herbaty). Включай двойное отрицание (nikt nic nie wie)."
+    ),
+}
 
 
 # Vocab learning scaffold: words still being learned are assembled from letter tiles
@@ -324,7 +352,7 @@ async def _generate_idiom_drill_exercises(user, db: Session, today, max_count: i
         print(f"[idiom_drill] {added} exercises from {len(undrilled)} expressions for user {user.id}")
 
 
-async def _ensure_vocab_pool(user, db: Session, threshold: int = 20, batch: int = 30):
+async def _ensure_vocab_pool(user, db: Session, threshold: int = 40, batch: int = 50):
     """Generate new vocabulary words via Mistral when pool runs low."""
     eligible_levels = _eligible_vocab_levels(user.level)
     seen_ids = {uv.vocab_id for uv in db.query(models.UserVocabulary).filter(
@@ -354,14 +382,16 @@ async def _ensure_vocab_pool(user, db: Session, threshold: int = 20, batch: int 
                 avoid_words=avoid_list,
             ),
             temperature=0.85,
-            max_tokens=3000,
-            timeout=20.0,
-            retries=1,
+            max_tokens=4000,
+            timeout=45.0,   # batch=50 words takes >20s on small; was timing out
+            retries=2,
             model="mistral-small-latest",
+            purpose="vocab_gen",
+            user_id=user.id,
         )
         generated = await mistral.parse_json_response(raw)
     except Exception as e:
-        print(f"[vocab_gen] Mistral failed for user {user.id}: {e}")
+        print(f"[vocab_gen] Mistral failed for user {user.id}: {type(e).__name__}: {e}")
         return
 
     # Deduplicate: skip words that already exist (exact match after lowercase strip)
@@ -381,7 +411,7 @@ async def _ensure_vocab_pool(user, db: Session, threshold: int = 20, batch: int 
             translation_en=item.get("translation_en", ""),
             example_sentence=item.get("example_sentence", ""),
             topic_id=topic_id,
-            level=user.level,
+            level=_clamp_vocab_level(item.get("level"), user.level),  # keep real level (B1/B2), not always current
         ))
         existing_polish.add(polish.lower())
         added += 1
@@ -454,6 +484,7 @@ def _select_topics_for_generation(user, db: Session, n: int = 2) -> list:
 
     # Topics that produce nonsensical exercises (phonetics/alphabet can't be translated/filled-in)
     _SKIP_GENERATION_SLUGS = {"alphabet", "letters", "pronunciation"}
+    _DONE_REVIEW_SLUGS = _SKIP_GENERATION_SLUGS
 
     # Candidate pool: current+below levels, non-done, has explanation
     all_eligible = db.query(models.Topic).filter(
@@ -467,10 +498,10 @@ def _select_topics_for_generation(user, db: Session, n: int = 2) -> list:
     # Sort: lower level first, then lower score first (weakest topics get priority)
     candidates.sort(key=lambda t: (_LEVEL_ORDER.index(t.level_required) if t.level_required in _LEVEL_ORDER else 99, _topic_score(t)))
 
-    # If >=80% of current+below topics are done, inject one next-level topic
+    # If >=60% of current+below topics are done, inject one next-level topic (pull upward sooner)
     if next_level and all_eligible:
         coverage = 1 - len(candidates) / len(all_eligible)
-        if coverage >= 0.8:
+        if coverage >= 0.6:
             next_topics = db.query(models.Topic).filter(
                 models.Topic.explanation_ru.isnot(None),
                 models.Topic.explanation_ru != "",
@@ -496,14 +527,25 @@ def _select_topics_for_generation(user, db: Session, n: int = 2) -> list:
         if row[0]
     }
 
-    # Pick n topics: prefer fresh ones but never skip a whole level for freshness.
-    # Strategy: for each slot, pick the highest-priority fresh topic; if none, pick highest-priority recent.
+    # Done topics resurface for spaced review (not in the last 7 days) — otherwise a
+    # mastered topic like negation disappears forever and never gets reinforced.
+    done_review = db.query(models.Topic).filter(
+        models.Topic.explanation_ru.isnot(None),
+        models.Topic.explanation_ru != "",
+        models.Topic.id.in_(done_ids) if done_ids else False,
+    ).all()
+    done_review = [t for t in done_review
+                   if t.id not in recent_ids and t.slug not in _DONE_REVIEW_SLUGS]
+    random.shuffle(done_review)  # vary which mastered topic comes back
+
+    # Pick n topics: weakest non-done first, then recently-covered non-done, then a
+    # mastered topic for spaced review.
     chosen = []
     used_ids = set()
     fresh = [t for t in candidates if t.id not in recent_ids]
     stale = [t for t in candidates if t.id in recent_ids]
 
-    for pool in (fresh, stale):
+    for pool in (fresh, stale, done_review):
         for t in pool:
             if t.id not in used_ids:
                 chosen.append(t)
@@ -581,11 +623,13 @@ async def _generate_exercises(user, count: int, interest_themes_str: str, level:
     async def _batch_for_topic(topic_obj, batch_count):
         title = topic_obj.title_ru or topic_obj.slug
         summary = (topic_obj.explanation_ru or "")[:900]
+        focus = _TOPIC_FOCUS.get(topic_obj.slug, "")
         prompt = (
             "Ты генератор упражнений по польскому языку.\n"
             f"Уровень: {gen_level}. Родной язык: {user.native_language}.\n"
             f"Тема правила: {title}\n\n"
             f"Описание правила:\n{summary}\n\n"
+            + (f"ОСОБЫЙ ФОКУС: {focus}\n\n" if focus else "")
             + prompts._EXERCISE_COMMON_RULES + "\n\n"
             f"Сгенерируй {batch_count} упражнений. Типы: fill_blank, multiple_choice. Миксуй равномерно.\n"
             "ВСЕ упражнения должны явно проверять это правило.\n"
@@ -1111,6 +1155,7 @@ async def _generate_daily_pool(user, db: Session, today, count: int):
             _generate_topic_exercises_for_daily(user, db, today),
         )
         seen_qs = _seen_questions(user.id, db)
+        seen_tokens = [set(q.split()) for q in seen_qs]
         validated = []
         for item in generated:
             item = _validate_type(item)
@@ -1129,8 +1174,10 @@ async def _generate_daily_pool(user, db: Session, today, count: int):
             item = _require_word_hints(item)
             if item is None:
                 continue
-            if _norm(item.get("question", "")) in seen_qs:
-                continue
+            qn = _norm(item.get("question", ""))
+            if qn in seen_qs or _too_similar(qn, seen_tokens):
+                continue  # exact or near-duplicate ('для мамы' vs 'для моей мамы')
+            seen_qs.add(qn); seen_tokens.append(set(qn.split()))  # dedup within this batch too
             validated.append(item)
         # Save ALL valid exercises to pool (populates shared pool regardless of deficit)
         for item in validated:
@@ -1206,6 +1253,7 @@ async def _generate_bonus_pool(user, db: Session, today, count: int):
     if deficit > 0:
         generated = await _generate_exercises(user, deficit, interest_themes_str, level=challenge_level, topics=gen_topics or None)
         seen_qs = _seen_questions(user.id, db)
+        seen_tokens = [set(q.split()) for q in seen_qs]
         validated = []
         for item in generated:
             item = _validate_type(item)
@@ -1224,8 +1272,10 @@ async def _generate_bonus_pool(user, db: Session, today, count: int):
             item = _require_word_hints(item)
             if item is None:
                 continue
-            if _norm(item.get("question", "")) in seen_qs:
-                continue
+            qn = _norm(item.get("question", ""))
+            if qn in seen_qs or _too_similar(qn, seen_tokens):
+                continue  # exact or near-duplicate ('для мамы' vs 'для моей мамы')
+            seen_qs.add(qn); seen_tokens.append(set(qn.split()))  # dedup within this batch too
             validated.append(item)
         # Save ALL valid exercises to pool (populates shared pool regardless of deficit)
         for item in validated:

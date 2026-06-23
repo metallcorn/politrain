@@ -1025,6 +1025,10 @@ def training_stats(
     vocab_errors = db.query(models.UserVocabulary).filter(
         models.UserVocabulary.user_id == current_user.id,
         models.UserVocabulary.correct_streak == 0,
+        # Only genuinely-wrong words, matching the errors session — freshly-added
+        # learn-word entries (last_reviewed NULL) are "new", not errors (#100:
+        # stats showed N but the errors session was empty)
+        models.UserVocabulary.last_reviewed.isnot(None),
     ).count()
     total_errors = errors + ai_errors + vocab_errors
 

@@ -14,7 +14,7 @@ from services.validators import (
     _fix_flashcard_exercise, _fix_mc_exercise, _fix_fill_blank_exercise,
     _fix_letter_tiles_exercise, _fix_translate_exercise, _fix_judge_sentence_exercise,
     _fix_order_words_exercise, _fix_word_definition_exercise,
-    _check_answer, _same_word_multiset, _VALID_EXERCISE_TYPES,
+    _check_answer, _same_word_multiset, _too_similar, _VALID_EXERCISE_TYPES,
 )
 
 
@@ -65,6 +65,23 @@ class TestSameWordMultiset:
 
     def test_empty_is_false(self):
         assert not _same_word_multiset("", "Wychodzę z domu.")
+
+
+class TestTooSimilar:
+    def test_near_duplicate_detected(self):
+        seen = [set("это подарок для мамы".split())]
+        assert _too_similar("это подарок для моей мамы", seen)
+
+    def test_distinct_questions_pass(self):
+        seen = [set("это подарок для мамы".split())]
+        assert not _too_similar("вчера я пошёл в кино с другом", seen)
+
+    def test_short_question_never_flagged(self):
+        seen = [set("dobry wieczór".split())]
+        assert not _too_similar("dobry wieczór", seen)
+
+    def test_empty_seen_passes(self):
+        assert not _too_similar("это подарок для мамы", [])
 
 
 # ---------- generic validation ----------

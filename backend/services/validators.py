@@ -452,3 +452,21 @@ def _same_word_multiset(user_answer: str, correct_answer: str) -> bool:
     u = sorted(_strip(w.rstrip('.?!,;')) for w in (user_answer or "").split() if w.strip())
     c = sorted(_strip(w.rstrip('.?!,;')) for w in (correct_answer or "").split() if w.strip())
     return bool(u) and u == c
+
+
+def _too_similar(question_norm: str, seen_token_sets: list, threshold: float = 0.7) -> bool:
+    """True when question_norm overlaps an already-seen question above `threshold` (Jaccard
+    on word sets). Catches near-duplicates that exact-match dedup misses — e.g.
+    'это подарок для мамы' vs 'это подарок для моей мамы'. Cheap, Python-only (no prompt
+    growth — Mistral has no memory of what it already produced)."""
+    toks = set(question_norm.split())
+    if len(toks) < 3:
+        return False  # too short to judge by overlap
+    for s in seen_token_sets:
+        if not s:
+            continue
+        inter = len(toks & s)
+        union = len(toks | s)
+        if union and inter / union >= threshold:
+            return True
+    return False
