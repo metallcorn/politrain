@@ -41,6 +41,7 @@ from services.generation import (
     _generate_idiom_drill_exercises, _ensure_vocab_pool, _select_interest_themes,
     _select_topics_for_generation, _generate_exercises, _generate_topic_pool,
     _generate_topic_exercises_for_daily, _generate_daily_pool, _generate_bonus_pool,
+    _generate_reading,
 )
 
 router = APIRouter(prefix="/training", tags=["training"])
@@ -510,6 +511,31 @@ async def get_training_session(
 
         random.shuffle(exercises)
 
+    elif mode == "reading":
+        # Reading comprehension: one passage + questions, scored as a unit.
+        uncompleted = db.query(models.DailyExercise).filter(
+            models.DailyExercise.user_id == current_user.id,
+            models.DailyExercise.date == today,
+            models.DailyExercise.source == "reading",
+            models.DailyExercise.is_completed == False,
+        ).count()
+        if uncompleted == 0:
+            await _generate_reading(current_user, db, today)
+        reading_de = db.query(models.DailyExercise).filter(
+            models.DailyExercise.user_id == current_user.id,
+            models.DailyExercise.date == today,
+            models.DailyExercise.source == "reading",
+            models.DailyExercise.is_completed == False,
+        ).order_by(models.DailyExercise.id.desc()).first()
+        if reading_de:
+            try:
+                content = json.loads(reading_de.content)
+                content["daily_exercise_id"] = reading_de.id
+                content["source"] = "reading"
+                exercises.append(content)
+            except Exception:
+                pass
+
     elif mode == "practice":
         # Review/consolidation: ONLY correctly answered AI exercises from past 60 days.
         # Incorrectly answered exercises stay in errors mode until fixed there.
@@ -642,6 +668,8 @@ async def submit_answer(
     correct_answer = ""
     explanation = None
     _vocab_mode = "normal"  # "zero" = no XP (know/don't know), "reduced" = XP_VOCAB
+    _reading_mode = False   # reading comprehension: XP scaled by correct answers
+    _reading_correct = 0
 
     if body.daily_exercise_id:
         de = db.query(models.DailyExercise).filter(
@@ -656,7 +684,22 @@ async def submit_answer(
                 explanation = raw_expl if isinstance(raw_expl, str) else None
                 ex_type = content.get("type", "")
 
-                if ex_type == "translate":
+                if ex_type == "reading":
+                    _reading_mode = True
+                    # user_answer is a JSON list of chosen option strings, one per question
+                    try:
+                        chosen = json.loads(body.user_answer)
+                    except Exception:
+                        chosen = []
+                    questions = content.get("questions", []) or []
+                    _reading_total = len(questions)
+                    for i, q in enumerate(questions):
+                        ans = str(q.get("correct_answer", "")).strip()
+                        if i < len(chosen) and _norm(str(chosen[i])) == _norm(ans):
+                            _reading_correct += 1
+                    is_correct = _reading_total > 0 and _reading_correct == _reading_total
+                    correct_answer = ""  # not a single-answer exercise
+                elif ex_type == "translate":
                     is_correct, diacritic_hint = _check_answer(body.user_answer, correct_answer)
                     if not is_correct:
                         is_correct = await _check_translation(
@@ -916,7 +959,10 @@ async def submit_answer(
         )
         db.add(history)
 
-    if diacritic_hint and _vocab_mode == "normal":
+    if _reading_mode:
+        # reading comprehension: XP scaled by correct answers (each question ~= XP_CORRECT/2)
+        xp = add_xp(current_user, db, _reading_correct * (XP_CORRECT // 2))
+    elif diacritic_hint and _vocab_mode == "normal":
         xp = XP_CORRECT // 2
         add_xp(current_user, db, xp)
     elif _vocab_mode == "vocab_session":

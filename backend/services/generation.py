@@ -6,6 +6,7 @@ it must NOT import from routers.* (circular import — see CLAUDE.md pitfalls).
 import asyncio
 import json
 import random
+import re
 from datetime import date, datetime, timedelta
 
 from sqlalchemy import func
@@ -995,6 +996,76 @@ async def _generate_topic_exercises_for_daily(user, db: Session, today) -> list:
             ))
     print(f"[topic_d] total {len(entries)} exercises from {len(chosen)} topics for user {user.id}")
     return entries
+
+
+async def _generate_reading(user, db: Session, today, level: str = None):
+    """Generate one reading-comprehension passage + 3 MC questions (source='reading').
+    A single DailyExercise of type='reading'; scored as a unit in submit_answer."""
+    gen_level = level or user.level
+    themes = _select_interest_themes(user.content_preferences)
+    prompt = prompts.READING_PROMPT.format(
+        level=gen_level, native_language=user.native_language, interest_themes=themes,
+    )
+    raw = None
+    for model_name, timeout_sec in [("mistral-large-latest", 60.0), ("mistral-small-latest", 40.0)]:
+        try:
+            raw = await mistral.simple_prompt(
+                system="You are a Polish reading-comprehension generator. Respond only with a valid JSON object.",
+                user=prompt, temperature=0.8, max_tokens=2000,
+                timeout=timeout_sec, retries=1, model=model_name,
+                purpose="reading", user_id=user.id,
+            )
+            break
+        except Exception as e:
+            print(f"[reading] {model_name} failed for user {user.id}: {type(e).__name__}: {e}")
+    if not raw:
+        return
+    try:
+        item = await mistral.parse_json_response(raw)
+    except Exception:
+        return
+    if not isinstance(item, dict) or not item.get("text") or not isinstance(item.get("questions"), list):
+        return
+    # Keep only well-formed questions. Mistral often labels options ("B. ...") and returns
+    # correct_answer as a bare letter ("B") — strip labels and map the letter to its option.
+    def _strip_label(o):
+        m = re.match(r'^\s*[A-Da-d][.)]\s*(.+)$', str(o))
+        return (m.group(1) if m else str(o)).strip()
+
+    qs = []
+    for q in item["questions"]:
+        opts = q.get("options") or []
+        if not isinstance(opts, list) or len(opts) < 2:
+            continue
+        clean = [_strip_label(o) for o in opts]
+        raw_ca = str(q.get("correct_answer", "")).strip()
+        idx = None
+        if len(raw_ca) == 1 and raw_ca.upper() in "ABCD" and int("ABCD".index(raw_ca.upper())) < len(clean):
+            idx = "ABCD".index(raw_ca.upper())
+        else:
+            ca_clean = _strip_label(raw_ca)
+            for i, o in enumerate(clean):
+                if ca_clean == o or raw_ca == str(opts[i]).strip():
+                    idx = i
+                    break
+        if idx is None:
+            continue
+        qs.append({
+            "question": q.get("question", ""),
+            "options": clean,
+            "correct_answer": clean[idx],
+            "explanation": q.get("explanation") if isinstance(q.get("explanation"), str) else None,
+        })
+    if len(qs) < 2:
+        return
+    item["questions"] = qs
+    item["type"] = "reading"
+    db.add(models.DailyExercise(
+        user_id=user.id, date=today, exercise_type="reading",
+        content=json.dumps(item, ensure_ascii=False), source="reading",
+    ))
+    db.commit()
+    print(f"[reading] generated passage with {len(qs)} questions for user {user.id}")
 
 
 async def _generate_daily_pool(user, db: Session, today, count: int):

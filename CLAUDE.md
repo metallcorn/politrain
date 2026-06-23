@@ -457,6 +457,19 @@ asyncio.run(main())
 # В mistral_call_logs: purpose='order_check' (small); проверка перевода: purpose='translation_check'
 ```
 
+### 20б. Чтение с пониманием (mode=reading)
+```bash
+SECRET=$(grep SECRET_KEY /home/politrain/politrain_code/.env | cut -d= -f2) ; TOKEN=$(python3 -c "import jwt,datetime; print(jwt.encode({'sub':'2','exp':datetime.datetime.now(datetime.timezone.utc)+datetime.timedelta(hours=1)},'$SECRET',algorithm='HS256'))")
+curl -s -m 85 "http://localhost:8000/api/v1/training/session?mode=reading" -H "Authorization: Bearer $TOKEN" | python3 -c "
+import sys,json; e=json.load(sys.stdin)['exercises'][0]
+print('type:', e['type'], '| questions:', len(e['questions']), '| word_hints:', len(e.get('word_hints',{})))
+for q in e['questions']: assert q['correct_answer'] in q['options'], 'ответ не в options!'
+print('OK: все correct_answer ∈ options (буквы-метки срезаны)')
+"
+# Ответ: user_answer = JSON-список выбранных строк; xp = верных × 5; is_correct если все верно
+# Если 0 exercises — Mistral вернул correct_answer буквой и валидатор не смапил (см. _strip_label/letter-map)
+```
+
 ### 20. Кольцо дневной цели на экране завершения сессии
 ```bash
 # Данные для кольца — из dashboard (бэкенд не менялся, проверяем что поля на месте):
@@ -647,6 +660,7 @@ backend/
   - `topic` — тренировка по выбранной теме (#101): СМЕШАННАЯ сессия = ошибки по теме (source badge "error") + повторение освоенного по теме (review, capped ~1/3) + новые задания (генерируются _generate_topic_pool). Нет ошибок → больше нового. Вход: TrainingPage «Тренировка по теме» → /topics → тема → кнопка; mode=topic&topic=slug; не входит в daily_done
   - `topic_d` — AI-задания по слабым темам, встроенные в дневной пул (2 темы × 2 упражнения, входят в today_done, обновляют UserTopicProgress)
   - `practice` — микс пройденных AI-упражнений + curriculum слабые места (режим Повторение, без лимита в день, не входит в today_done)
+  - `reading` — чтение с пониманием: ОДИН связный текст + 3 MC-вопроса как единое целое (type="reading", content={title,text,translation,word_hints,questions:[{question,options,correct_answer,explanation}]}); генерит `_generate_reading` (READING_PROMPT); валидатор срезает буквы-метки («B.») и маппит ответ-букву на вариант; ответ: user_answer=JSON-список выбранных строк, XP = верных × (XP_CORRECT//2), is_correct только если все верно; компонент ReadingExercise рендерит текст (WordHintText) + вопросы; таймаут сессии 85с
   - SRS поля: `next_review DATE`, `srs_interval_days INT`, `srs_repetitions INT` — SM2 для AI-заданий
 - `UserExerciseHistory` — история ответов на curriculum упражнения (exercise_id)
 - `Exercise` — статические упражнения по темам (curriculum)

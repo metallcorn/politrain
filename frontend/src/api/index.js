@@ -80,7 +80,7 @@ export const vocabApi = {
 
 // Training
 export const trainingApi = {
-  session: (mode = 'daily', topic = null) => api.get(`/training/session?mode=${mode}${topic ? `&topic=${topic}` : ''}`, { timeout: ['bonus', 'new', 'daily', 'topic'].includes(mode) ? 85000 : 30000 }),
+  session: (mode = 'daily', topic = null) => api.get(`/training/session?mode=${mode}${topic ? `&topic=${topic}` : ''}`, { timeout: ['bonus', 'new', 'daily', 'topic', 'reading'].includes(mode) ? 85000 : 30000 }),
   answer: (data) => api.post('/training/answer', data),
   stats: () => api.get('/training/stats'),
   report: (data) => api.post('/training/report', data),

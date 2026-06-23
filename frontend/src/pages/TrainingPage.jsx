@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { trainingApi, vocabApi } from '../api'
 import Card from '../components/ui/Card'
 import Skeleton from '../components/ui/Skeleton'
-import { Calendar, AlertCircle, Sparkles, Rocket, BookOpen, RefreshCw, Target } from 'lucide-react'
+import { Calendar, AlertCircle, Sparkles, Rocket, BookOpen, RefreshCw, Target, FileText } from 'lucide-react'
 
 export default function TrainingPage() {
   const [stats, setStats] = useState(null)
@@ -125,6 +125,16 @@ export default function TrainingPage() {
       description: 'Выбери тему — ошибки по ней, повторение и новые задания',
       count: 'Выбрать тему',
       color: 'border-indigo-100 hover:border-indigo-300',
+      badge: null,
+    },
+    {
+      mode: 'reading',
+      disabled: false,
+      icon: <FileText size={28} className="text-emerald-500" />,
+      title: 'Чтение',
+      description: 'Короткий текст по-польски и вопросы на понимание',
+      count: 'Читать и понимать',
+      color: 'border-emerald-100 hover:border-emerald-300',
       badge: null,
     },
   ]

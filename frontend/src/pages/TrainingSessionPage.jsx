@@ -12,6 +12,7 @@ import WordOrder from '../components/training/WordOrder'
 import JudgeSentence from '../components/training/JudgeSentence'
 import LetterTilesBlank from '../components/training/LetterTilesBlank'
 import WordDefinition from '../components/training/WordDefinition'
+import ReadingExercise from '../components/training/ReadingExercise'
 import SessionResult from '../components/training/SessionResult'
 import ProgressBar from '../components/ui/ProgressBar'
 import { ArrowLeft, SkipForward, Flag, X, Brain, Sparkles, CheckCircle, Rocket, CalendarDays, BookOpen, MessageCircle } from 'lucide-react'
@@ -87,7 +88,7 @@ export default function TrainingSessionPage() {
     if (!loading) return
     setLoadProgress(0)
     setLoadStep(0)
-    const duration = mode === 'daily' ? 55000 : 25000
+    const duration = ['daily', 'bonus', 'new', 'topic', 'reading'].includes(mode) ? 55000 : 25000
     const interval = 200
     const step = (interval / duration) * 90
     const stepInterval = duration / GEN_STEPS.length
@@ -420,6 +421,7 @@ export default function TrainingSessionPage() {
       case 'judge_sentence': return <JudgeSentence {...props} />
       case 'letter_tiles': return <LetterTilesBlank {...props} />
       case 'word_definition': return <WordDefinition {...props} />
+      case 'reading': return <ReadingExercise {...props} />
       default: return <FillBlank {...props} />
     }
   }
