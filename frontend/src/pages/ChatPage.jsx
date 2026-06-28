@@ -12,16 +12,18 @@ import { Plus, MessageSquare } from 'lucide-react'
 export default function ChatPage() {
   const [sessions, setSessions] = useState([])
   const [topics, setTopics] = useState([])
+  const [scenarios, setScenarios] = useState([])
   const [loading, setLoading] = useState(true)
   const [modalOpen, setModalOpen] = useState(false)
   const navigate = useNavigate()
   const { addToast } = useUIStore()
 
   useEffect(() => {
-    Promise.all([chatApi.listSessions(), chatApi.getTopics()])
-      .then(([s, t]) => {
+    Promise.all([chatApi.listSessions(), chatApi.getTopics(), chatApi.getScenarios()])
+      .then(([s, t, sc]) => {
         setSessions(s.data)
         setTopics(t.data.topics)
+        setScenarios(sc.data.scenarios)
       })
       .finally(() => setLoading(false))
   }, [])
@@ -29,6 +31,15 @@ export default function ChatPage() {
   const createSession = async (topic = null) => {
     try {
       const res = await chatApi.createSession(topic)
+      navigate(`/chat/${res.data.id}`)
+    } catch {
+      addToast('Ошибка создания сессии', 'error')
+    }
+  }
+
+  const createScenario = async (scenario) => {
+    try {
+      const res = await chatApi.createScenario(scenario)
       navigate(`/chat/${res.data.id}`)
     } catch {
       addToast('Ошибка создания сессии', 'error')
@@ -82,7 +93,25 @@ export default function ChatPage() {
           <Button className="w-full" onClick={() => { setModalOpen(false); createSession() }}>
             Свободная тема
           </Button>
+
           <div className="border-t border-gray-100 pt-4">
+            <p className="text-sm font-medium text-gray-700 mb-2">🎭 Ролевые ситуации</p>
+            <p className="text-xs text-gray-400 mb-3">Диалог с «носителем» в роли. Разбор ошибок — в конце.</p>
+            <div className="grid grid-cols-2 gap-2">
+              {scenarios.map((s) => (
+                <button
+                  key={s.id}
+                  onClick={() => { setModalOpen(false); createScenario(s.id) }}
+                  className="px-3 py-2.5 rounded-xl border-2 border-gray-200 text-sm text-gray-700 hover:border-primary-400 hover:bg-primary-50 transition-colors"
+                >
+                  {s.title}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="border-t border-gray-100 pt-4">
+            <p className="text-sm font-medium text-gray-700 mb-2">💬 Свободные темы</p>
             <TopicSuggestions topics={topics} onSelect={(t) => { setModalOpen(false); createSession(t) }} />
           </div>
         </div>

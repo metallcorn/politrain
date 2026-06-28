@@ -4,7 +4,10 @@ import { chatApi } from '../api'
 import { useUIStore } from '../store'
 import MessageBubble from '../components/chat/MessageBubble'
 import Spinner from '../components/ui/Spinner'
-import { Send, ArrowLeft, Mic } from 'lucide-react'
+import Modal from '../components/ui/Modal'
+import Markdown from '../components/ui/Markdown'
+import Button from '../components/ui/Button'
+import { Send, ArrowLeft, Mic, ClipboardCheck } from 'lucide-react'
 
 export default function ChatSessionPage() {
   const { id } = useParams()
@@ -15,7 +18,26 @@ export default function ChatSessionPage() {
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
+  const [debriefOpen, setDebriefOpen] = useState(false)
+  const [debriefText, setDebriefText] = useState('')
+  const [debriefing, setDebriefing] = useState(false)
   const bottomRef = useRef(null)
+
+  const isScenario = Boolean(session?.scenario)
+  const userMsgCount = messages.filter((m) => m.role === 'user').length
+
+  const handleDebrief = async () => {
+    setDebriefOpen(true)
+    setDebriefing(true)
+    try {
+      const res = await chatApi.debrief(id)
+      setDebriefText(res.data.text)
+    } catch {
+      setDebriefText('Не удалось собрать разбор. Попробуй ещё раз позже.')
+    } finally {
+      setDebriefing(false)
+    }
+  }
 
   useEffect(() => {
     chatApi.getSession(id)
@@ -74,10 +96,22 @@ export default function ChatSessionPage() {
         <button onClick={() => navigate('/chat')} className="text-gray-400 hover:text-gray-600">
           <ArrowLeft size={20} />
         </button>
-        <div>
-          <h1 className="font-semibold text-gray-900">{session?.topic || 'Свободная беседа'}</h1>
-          <p className="text-xs text-gray-400">Разговор по-польски с AI</p>
+        <div className="flex-1 min-w-0">
+          <h1 className="font-semibold text-gray-900 truncate">
+            {isScenario ? '🎭 ' : ''}{session?.topic || 'Свободная беседа'}
+          </h1>
+          <p className="text-xs text-gray-400">{isScenario ? 'Ролевой диалог · оставайся в роли' : 'Разговор по-польски с AI'}</p>
         </div>
+        {isScenario && (
+          <button
+            onClick={handleDebrief}
+            disabled={userMsgCount === 0}
+            className="flex items-center gap-1 text-sm px-3 py-1.5 rounded-xl bg-primary-50 text-primary-800 font-medium hover:bg-primary-100 disabled:opacity-40 transition-colors flex-shrink-0"
+          >
+            <ClipboardCheck size={16} />
+            Разбор
+          </button>
+        )}
       </div>
 
       {/* Messages */}
@@ -128,6 +162,22 @@ export default function ChatSessionPage() {
           <Send size={20} />
         </button>
       </div>
+
+      <Modal isOpen={debriefOpen} onClose={() => setDebriefOpen(false)} title="Разбор диалога">
+        {debriefing ? (
+          <div className="flex flex-col items-center gap-3 py-6">
+            <Spinner />
+            <p className="text-sm text-gray-400">Анализирую твои реплики...</p>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-4">
+            <div className="prose prose-sm max-w-none text-gray-700">
+              <Markdown>{debriefText}</Markdown>
+            </div>
+            <Button onClick={() => setDebriefOpen(false)}>Понятно</Button>
+          </div>
+        )}
+      </Modal>
     </div>
   )
 }

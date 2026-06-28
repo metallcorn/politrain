@@ -153,6 +153,7 @@ class ChatSession(Base):
     ended_at = Column(DateTime, nullable=True)
     message_count = Column(Integer, default=0)
     topic = Column(String(200), nullable=True)
+    scenario = Column(String(50), nullable=True)  # role-play scenario id (cafe/doctor/...) or NULL for free chat
 
     user = relationship("User", back_populates="chat_sessions")
     messages = relationship("ChatMessage", back_populates="session", cascade="all, delete-orphan")

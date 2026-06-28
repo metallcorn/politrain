@@ -16,6 +16,7 @@ def _migrate():
         for sql in [
             "ALTER TABLE topics ADD COLUMN explanation_ru TEXT",
             "ALTER TABLE topics ADD COLUMN explanation_en TEXT",
+            "ALTER TABLE chat_sessions ADD COLUMN scenario VARCHAR(50)",
             "ALTER TABLE exercises ADD COLUMN is_flagged INTEGER DEFAULT 0",
             "ALTER TABLE user_content_preferences ADD COLUMN interest_themes TEXT",
             "ALTER TABLE users ADD COLUMN total_training_seconds INTEGER DEFAULT 0",

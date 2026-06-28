@@ -600,7 +600,12 @@ backend/
                        week (7 дней из DailyActivity), month (30 дней), by_source (bucketed %),
                        totals (streak_days, best_streak, xp, total_time_seconds);
                      GET /profile/leaderboard — таблица лидеров: ±5 пользователей по xp_today, my_rank, total_users
-    chat.py        — чат с AI собеседником
+    chat.py        — чат с AI собеседником; свободные темы (CHAT_SYSTEM_PROMPT, инлайн-правки) +
+                     РОЛЕВЫЕ диалоги: GET /chat/scenarios (cafe/doctor/airport/shop/hotel/directions),
+                     POST /chat/session со scenario → AI держит роль (CHAT_ROLEPLAY_PROMPT, без правок по ходу),
+                     открывающая реплика сидируется при создании; POST /chat/session/{id}/debrief →
+                     разбор реплик пользователя в конце (DIALOGUE_DEBRIEF_PROMPT, мягкие правки markdown);
+                     ChatSession.scenario (NULL=свободный чат)
   services/
     validators.py  — ЧИСТЫЕ функции валидации (без БД и API), покрыты pytest (`backend/tests/test_validators.py`, 109 тестов, `venv/bin/pytest -q`):
                      _norm/_strip/_check_answer, _validate_type, _sanitize_native_fields,

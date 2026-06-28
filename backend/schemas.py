@@ -176,6 +176,7 @@ class TrainingSessionResponse(BaseModel):
 class ChatSessionResponse(BaseModel):
     id: int
     topic: Optional[str]
+    scenario: Optional[str] = None
     created_at: datetime
     message_count: int
 
@@ -200,6 +201,7 @@ class SendMessageRequest(BaseModel):
 
 class NewChatSessionRequest(BaseModel):
     topic: Optional[str] = None
+    scenario: Optional[str] = None  # role-play scenario id
 
 
 # Exam

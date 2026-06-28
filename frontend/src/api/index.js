@@ -92,10 +92,13 @@ export const trainingApi = {
 // Chat
 export const chatApi = {
   createSession: (topic) => api.post('/chat/session', { topic }),
+  createScenario: (scenario) => api.post('/chat/session', { scenario }),
   listSessions: () => api.get('/chat/sessions'),
   getSession: (id) => api.get(`/chat/session/${id}`),
   sendMessage: (id, content) => api.post(`/chat/session/${id}/message`, { content }),
   getTopics: () => api.get('/chat/topics'),
+  getScenarios: () => api.get('/chat/scenarios'),
+  debrief: (id) => api.post(`/chat/session/${id}/debrief`),
 }
 
 // Exam

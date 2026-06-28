@@ -1,4 +1,5 @@
 import json
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
@@ -22,6 +23,61 @@ CHAT_TOPICS = [
     "Свободная тема",
 ]
 
+# Role-play scenarios: the AI stays in `role`, opens with `opening`, corrections deferred to debrief.
+SCENARIOS = {
+    "cafe":       {"title": "В кафе",            "role": "официант в польском кафе",                 "opening": "Dzień dobry! Zapraszam. Co podać do picia?"},
+    "doctor":     {"title": "У врача",           "role": "врач-терапевт на приёме",                  "opening": "Dzień dobry, proszę usiąść. Co Panu/Pani dolega?"},
+    "airport":    {"title": "В аэропорту",       "role": "сотрудник стойки регистрации в аэропорту", "opening": "Dzień dobry! Poproszę paszport i bilet. Dokąd Pan/Pani leci?"},
+    "shop":       {"title": "В магазине одежды", "role": "продавец в магазине одежды",               "opening": "Dzień dobry! W czym mogę pomóc?"},
+    "hotel":      {"title": "В отеле",           "role": "администратор на ресепшене отеля",         "opening": "Dzień dobry! Witamy w hotelu. Ma Pan/Pani rezerwację?"},
+    "directions": {"title": "Спросить дорогу",   "role": "прохожий на улице польского города",       "opening": "Słucham? W czym mogę pomóc?"},
+}
+
+
+@router.get("/scenarios")
+def get_scenarios(current_user: models.User = Depends(get_current_user)):
+    return {"scenarios": [{"id": k, "title": v["title"]} for k, v in SCENARIOS.items()]}
+
+
+@router.post("/session/{session_id}/debrief")
+async def debrief_dialogue(
+    session_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """End-of-dialogue review: gentle corrections of the learner's Polish (role-play sessions)."""
+    session = db.query(models.ChatSession).filter(
+        models.ChatSession.id == session_id,
+        models.ChatSession.user_id == current_user.id,
+    ).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    user_msgs = db.query(models.ChatMessage).filter(
+        models.ChatMessage.session_id == session_id,
+        models.ChatMessage.role == "user",
+    ).order_by(models.ChatMessage.created_at).all()
+    if not user_msgs:
+        return {"text": "Ты ещё ничего не написал — напиши пару реплик, и я разберу!"}
+
+    title = SCENARIOS.get(session.scenario, {}).get("title", session.topic or "диалог")
+    joined = "\n".join(f"- {m.content}" for m in user_msgs)
+    try:
+        text = await mistral.simple_prompt(
+            system="You are a kind Polish language teacher. Reply in the user's native language, markdown.",
+            user=prompts.DIALOGUE_DEBRIEF_PROMPT.format(
+                title=title, user_messages=joined,
+                native_language=current_user.native_language,
+            ),
+            temperature=0.4, max_tokens=700, timeout=40.0, retries=1,
+            purpose="dialogue_debrief", user_id=current_user.id,
+        )
+    except Exception:
+        text = "Не удалось собрать разбор — попробуй ещё раз чуть позже."
+    session.ended_at = datetime.utcnow()
+    db.commit()
+    return {"text": text}
+
 
 @router.post("/session", response_model=schemas.ChatSessionResponse)
 def create_session(
@@ -29,10 +85,20 @@ def create_session(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    session = models.ChatSession(user_id=current_user.id, topic=body.topic)
+    scenario = body.scenario if body.scenario in SCENARIOS else None
+    topic = SCENARIOS[scenario]["title"] if scenario else body.topic
+    session = models.ChatSession(user_id=current_user.id, topic=topic, scenario=scenario)
     db.add(session)
     db.commit()
     db.refresh(session)
+    # Seed the opening line so the user steps into an already-started scene
+    if scenario:
+        db.add(models.ChatMessage(
+            session_id=session.id, role="assistant", content=SCENARIOS[scenario]["opening"],
+        ))
+        session.message_count += 1
+        db.commit()
+        db.refresh(session)
     return session
 
 
@@ -67,6 +133,7 @@ def get_session(
     return {
         "id": session.id,
         "topic": session.topic,
+        "scenario": session.scenario,
         "created_at": session.created_at,
         "message_count": session.message_count,
         "messages": [
@@ -119,11 +186,18 @@ async def send_message(
         for t in weak_topics
     ) or "нет"
 
-    system = prompts.CHAT_SYSTEM_PROMPT.format(
-        level=current_user.level,
-        native_language=current_user.native_language,
-        weak_spots=weak_spots,
-    )
+    if session.scenario and session.scenario in SCENARIOS:
+        sc = SCENARIOS[session.scenario]
+        system = prompts.CHAT_ROLEPLAY_PROMPT.format(
+            role=sc["role"], title=sc["title"],
+            level=current_user.level, native_language=current_user.native_language,
+        )
+    else:
+        system = prompts.CHAT_SYSTEM_PROMPT.format(
+            level=current_user.level,
+            native_language=current_user.native_language,
+            weak_spots=weak_spots,
+        )
 
     messages = [{"role": "system", "content": system}]
     for msg in history:
