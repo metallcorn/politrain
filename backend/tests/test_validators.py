@@ -14,7 +14,7 @@ from services.validators import (
     _fix_flashcard_exercise, _fix_mc_exercise, _fix_fill_blank_exercise,
     _fix_letter_tiles_exercise, _fix_translate_exercise, _fix_judge_sentence_exercise,
     _fix_order_words_exercise, _fix_word_definition_exercise,
-    _check_answer, _same_word_multiset, _too_similar, _VALID_EXERCISE_TYPES,
+    _check_answer, _same_word_multiset, _too_similar, _question_skeleton, _VALID_EXERCISE_TYPES,
 )
 
 
@@ -82,6 +82,26 @@ class TestTooSimilar:
 
     def test_empty_seen_passes(self):
         assert not _too_similar("это подарок для мамы", [])
+
+
+class TestQuestionSkeleton:
+    def test_same_opening_different_content_collapse(self):
+        a = _question_skeleton("Na stole leży kot.")
+        b = _question_skeleton("Na stole leży duża czerwona książka.")
+        assert a == b and a == "na stole lezy"
+
+    def test_blank_and_numbers_ignored(self):
+        a = _question_skeleton("Nie mam czasu na ___.")
+        b = _question_skeleton("Nie mam czasu na tę pracę.")
+        assert a == b == "nie mam czasu"
+
+    def test_distinct_openings_differ(self):
+        a = _question_skeleton("Idę do sklepu po chleb.")
+        b = _question_skeleton("Na stole leży kot.")
+        assert a != b
+
+    def test_short_question_empty_skeleton(self):
+        assert _question_skeleton("Dobry wieczór.") == ""
 
 
 # ---------- generic validation ----------
@@ -275,6 +295,24 @@ class TestFixFillBlank:
         item = {"type": "fill_blank", "question": "Lubię ___ (czarny) kawę.",
                 "correct_answer": "czarną"}
         assert _fix_fill_blank_exercise(item) is not None
+
+    def test_interrogative_answer_rejected(self):
+        # report #212: "nie ma ___ chleba" → answer "czego" (real answer is "chleba")
+        item = {"type": "fill_blank", "question": "Dzisiaj nie ma ___ chleba w sklepie.",
+                "correct_answer": "czego"}
+        assert _fix_fill_blank_exercise(item) is None
+
+    def test_cyrillic_answer_rejected(self):
+        # report #222: answer "в" — can't type Cyrillic in a Polish exercise
+        item = {"type": "fill_blank", "question": "Litera 'Ł' wymawia się jak ___.",
+                "correct_answer": "в"}
+        assert _fix_fill_blank_exercise(item) is None
+
+    def test_glued_blank_rejected(self):
+        # report #215: "Ona ma___ samochód" — no real gap, glued token
+        item = {"type": "fill_blank", "question": "Ona ma___ samochód.",
+                "correct_answer": "ładny"}
+        assert _fix_fill_blank_exercise(item) is None
 
 
 class TestModalInfinitive:

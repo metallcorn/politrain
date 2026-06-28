@@ -7,6 +7,7 @@ import asyncio
 import json
 import random
 import re
+from collections import Counter
 from datetime import date, datetime, timedelta
 
 from sqlalchemy import func
@@ -30,6 +31,7 @@ from services.validators import (
     _fix_order_words_exercise,
     _fix_word_definition_exercise,
     _too_similar,
+    _question_skeleton,
 )
 
 _LEVEL_ORDER = ["A0", "A1", "A2", "B1", "B2", "C1", "C2"]
@@ -211,6 +213,27 @@ def _seen_questions(user_id: int, db: Session, limit: int = 60) -> set:
         except Exception:
             pass
     return result
+
+
+def _seen_skeletons(user_id: int, db: Session, limit: int = 80) -> Counter:
+    """Count opening-construction skeletons across recently completed AI exercises, so
+    generation can refuse a template the user has already seen too many times
+    ('Na stole leży ___' over and over). Returns Counter{skeleton: times_seen}."""
+    rows = db.query(models.DailyExercise).filter(
+        models.DailyExercise.user_id == user_id,
+        models.DailyExercise.source.in_(["new", "bonus", "review_ai", "topic", "topic_d"]),
+        models.DailyExercise.is_completed == True,
+    ).order_by(models.DailyExercise.completed_at.desc()).limit(limit).all()
+    counts = Counter()
+    for de in rows:
+        try:
+            q = json.loads(de.content).get("question", "")
+            sk = _question_skeleton(q)
+            if sk:
+                counts[sk] += 1
+        except Exception:
+            pass
+    return counts
 
 
 def _build_known_vocab_block(user_id: int, db: Session) -> str:
@@ -739,7 +762,44 @@ async def _generate_exercises(user, count: int, interest_themes_str: str, level:
             _batch_idiom(idiom_count),
         )
     all_items = grammar_gen + lexical_gen + judge_gen + tiles_gen + word_def_gen + idiom_gen
-    return await _verify_judge_false(all_items, user)
+    all_items = await _verify_judge_false(all_items, user)
+    all_items = await _verify_word_definitions(all_items, user)
+    return all_items
+
+
+async def _verify_word_definitions(items: list, user) -> list:
+    """Post-validation for word_definition riddles: drop any whose description is factually
+    wrong or ambiguous (sour-apple #213, ambiguous carrot #219). One batched cheap call."""
+    suspects = [it for it in items if it.get("type") == "word_definition"]
+    if not suspects:
+        return items
+    payload = [
+        {"id": i, "description": it.get("question", ""), "answer": it.get("correct_answer", "")}
+        for i, it in enumerate(suspects)
+    ]
+    try:
+        raw = await mistral.simple_prompt(
+            system="You are a strict Polish riddle editor. Respond only with JSON.",
+            user=prompts.WORD_DEFINITION_VERIFY_PROMPT.format(items=json.dumps(payload, ensure_ascii=False)),
+            temperature=0.0,
+            max_tokens=600,
+            timeout=30.0,
+            retries=1,
+            model="mistral-small-latest",
+            purpose="worddef_verify",
+            user_id=user.id,
+        )
+        verdicts = await mistral.parse_json_response(raw)
+        ok = {v["id"] for v in verdicts if isinstance(v, dict) and v.get("verdict") == "ok"}
+    except Exception as e:
+        print(f"[worddef_verify] failed for user {user.id}: {type(e).__name__}: {e}")
+        ok = set()  # verifier down → drop unverified riddles rather than ship bad ones
+    rejected = {id(suspects[i]) for i in range(len(suspects)) if i not in ok}
+    kept = [it for it in items if id(it) not in rejected]
+    dropped = len(items) - len(kept)
+    if dropped:
+        print(f"[worddef_verify] dropped {dropped}/{len(suspects)} riddles for user {user.id}")
+    return kept
 
 
 async def _verify_judge_false(items: list, user) -> list:
@@ -1227,6 +1287,8 @@ async def _generate_daily_pool(user, db: Session, today, count: int):
         )
         seen_qs = _seen_questions(user.id, db)
         seen_tokens = [set(q.split()) for q in seen_qs]
+        skeletons = _seen_skeletons(user.id, db)  # Counter of opening-construction templates
+        _SKELETON_MAX = 2  # allow a construction at most twice before it feels like a drill
         validated = []
         for item in generated:
             item = _validate_type(item)
@@ -1248,6 +1310,11 @@ async def _generate_daily_pool(user, db: Session, today, count: int):
             qn = _norm(item.get("question", ""))
             if qn in seen_qs or _too_similar(qn, seen_tokens):
                 continue  # exact or near-duplicate ('для мамы' vs 'для моей мамы')
+            sk = _question_skeleton(item.get("question", ""))
+            if sk and skeletons[sk] >= _SKELETON_MAX:
+                continue  # same opening construction seen too often ('Na stole leży ___')
+            if sk:
+                skeletons[sk] += 1
             seen_qs.add(qn); seen_tokens.append(set(qn.split()))  # dedup within this batch too
             validated.append(item)
         # Save ALL valid exercises to pool (populates shared pool regardless of deficit)
@@ -1325,6 +1392,8 @@ async def _generate_bonus_pool(user, db: Session, today, count: int):
         generated = await _generate_exercises(user, deficit, interest_themes_str, level=challenge_level, topics=gen_topics or None)
         seen_qs = _seen_questions(user.id, db)
         seen_tokens = [set(q.split()) for q in seen_qs]
+        skeletons = _seen_skeletons(user.id, db)  # Counter of opening-construction templates
+        _SKELETON_MAX = 2  # allow a construction at most twice before it feels like a drill
         validated = []
         for item in generated:
             item = _validate_type(item)
@@ -1346,6 +1415,11 @@ async def _generate_bonus_pool(user, db: Session, today, count: int):
             qn = _norm(item.get("question", ""))
             if qn in seen_qs or _too_similar(qn, seen_tokens):
                 continue  # exact or near-duplicate ('для мамы' vs 'для моей мамы')
+            sk = _question_skeleton(item.get("question", ""))
+            if sk and skeletons[sk] >= _SKELETON_MAX:
+                continue  # same opening construction seen too often ('Na stole leży ___')
+            if sk:
+                skeletons[sk] += 1
             seen_qs.add(qn); seen_tokens.append(set(qn.split()))  # dedup within this batch too
             validated.append(item)
         # Save ALL valid exercises to pool (populates shared pool regardless of deficit)

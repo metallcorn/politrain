@@ -177,6 +177,15 @@ def _fix_mc_exercise(item: dict) -> dict | None:
     return None
 
 
+# Interrogatives must never be a fill_blank answer — that means a meta-question
+# ("nie ma ___ chleba" → "czego") rather than a real gap to fill.
+_PL_INTERROGATIVES = {
+    "co", "czego", "czemu", "czym", "kto", "kogo", "komu", "kim",
+    "jaki", "jaka", "jakie", "jakiego", "jakiej", "jakich", "jakim",
+    "ktory", "ktora", "ktore", "ktorego", "gdzie", "kiedy", "dlaczego",
+    "jak", "ile", "czyj", "czyja", "czyje",
+}
+
 def _fix_fill_blank_exercise(item: dict) -> dict | None:
     """Ensure fill_blank has exactly one ___ and the answer isn't already visible in the question."""
     if item.get("type") != "fill_blank":
@@ -190,6 +199,22 @@ def _fix_fill_blank_exercise(item: dict) -> dict | None:
     if question.count("___") > 1:
         return None
     if "/" in correct and len(correct.split("/")) > 1:
+        return None
+
+    # The answer must be a real Polish word, not an interrogative placeholder. Mistral
+    # sometimes builds a meta-question whose answer is the question word itself, e.g.
+    # "Dzisiaj nie ma ___ chleba" → "czego" (the real answer is "chleba"). Report #212.
+    if _strip(correct).rstrip('.?!,;') in _PL_INTERROGATIVES:
+        return None
+
+    # The answer must be Polish, not a transliteration the user can't type in a Polish
+    # keyboard, e.g. "litera Ł wymawia się jak ___" → "в" (Cyrillic). Report #222.
+    if re.search(r'[а-яёА-ЯЁ]', correct):
+        return None
+
+    # A bare "___" with no space before it isn't a real blank: "Ona ma___ samochód"
+    # reads as a glued token, the user can't tell what to fill. Report #215.
+    if re.search(r'\S___', question) and "(" not in question:
         return None
 
     has_blank = "___" in question
@@ -470,3 +495,22 @@ def _too_similar(question_norm: str, seen_token_sets: list, threshold: float = 0
         if union and inter / union >= threshold:
             return True
     return False
+
+
+_SKELETON_WORD_RE = re.compile(r"[a-ząęóśćźżńła-яё]+", re.IGNORECASE)
+
+def _question_skeleton(question: str, n: int = 3) -> str:
+    """Fingerprint of a question's OPENING construction: the first n significant words,
+    normalized, ignoring the blank/parentheticals/numbers. Two items built on the same
+    cliché collapse to one skeleton even with a different substituted word — 'Na stole leży
+    kot' and 'Na stole leży duża książka' both → 'na stole lezy'; 'Nie mam czasu na to' and
+    'Nie mam czasu na pracę' both → 'nie mam czasu'. This is what users hate ('опять что-то
+    на столе лежит', feedback #102/#108). Empty for very short questions."""
+    q = re.sub(r'\([^)]*\)', ' ', question)
+    q = q.replace("___", " ")
+    q = re.sub(r'\d+', ' ', q)
+    words = [_strip(w) for w in _SKELETON_WORD_RE.findall(q)]
+    words = [w for w in words if w]
+    if len(words) < n + 1:   # need at least one word beyond the opening to vary
+        return ""
+    return " ".join(words[:n])
