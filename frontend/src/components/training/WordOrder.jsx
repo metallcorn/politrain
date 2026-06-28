@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react'
 import { motion } from 'framer-motion'
+import { Languages } from 'lucide-react'
 import Button from '../ui/Button'
 import ExerciseResult from './ExerciseResult'
 
@@ -7,6 +8,24 @@ import ExerciseResult from './ExerciseResult'
 const WORD_SPRING = { type: 'spring', stiffness: 500, damping: 34 }
 
 export default function WordOrder({ exercise, onAnswer, result }) {
+  // Per-word translations for the chips (feedback #110: "не помню как будет 'висит'").
+  // word_hints keys are lemmas; match an inflected chip by exact or stem (shared prefix).
+  const wordHints = exercise.word_hints || {}
+  const hintEntries = Object.entries(wordHints).map(([k, v]) => [k.toLowerCase(), v])
+  const [showTranslations, setShowTranslations] = useState(false)
+  const translateWord = (raw) => {
+    const w = raw.toLowerCase().replace(/[.,!?;:()]/g, '')
+    const exact = hintEntries.find(([k]) => k === w)
+    if (exact) return exact[1]
+    const stem = hintEntries.find(([k]) => {
+      const m = Math.min(k.length, w.length)
+      if (m < 4) return false
+      let cp = 0
+      while (cp < k.length && cp < w.length && k[cp] === w[cp]) cp++
+      return cp >= 3 && cp >= m - 3
+    })
+    return stem ? stem[1] : null
+  }
   // Support both "[word1, word2]" format and "word1 / word2 / word3" format
   const bracketMatch = exercise.question.match(/\[([^\]]+)\]/)
   const words = bracketMatch
@@ -73,22 +92,37 @@ export default function WordOrder({ exercise, onAnswer, result }) {
         ))}
       </motion.div>
 
+      {hintEntries.length > 0 && !submitted && (
+        <button
+          type="button"
+          onClick={() => setShowTranslations((v) => !v)}
+          className="self-start flex items-center gap-1.5 text-xs text-primary-700 font-medium"
+        >
+          <Languages size={14} />
+          {showTranslations ? 'Скрыть переводы' : 'Показать переводы слов'}
+        </button>
+      )}
+
       {/* Available words — fixed min-height so layout doesn't collapse as words are picked */}
       <motion.div layout className="min-h-24 flex flex-wrap gap-2 content-start">
-        {available.map((tile) => (
-          <motion.button
-            key={tile.id}
-            layoutId={`word-${tile.id}`}
-            layout
-            transition={WORD_SPRING}
-            whileTap={{ scale: 0.92 }}
-            onClick={() => addWord(tile)}
-            disabled={submitted}
-            className={`${chipBase} bg-white border-2 border-gray-200 hover:border-primary-400 hover:bg-primary-50 disabled:opacity-50`}
-          >
-            {tile.word}
-          </motion.button>
-        ))}
+        {available.map((tile) => {
+          const tr = showTranslations ? translateWord(tile.word) : null
+          return (
+            <motion.button
+              key={tile.id}
+              layoutId={`word-${tile.id}`}
+              layout
+              transition={WORD_SPRING}
+              whileTap={{ scale: 0.92 }}
+              onClick={() => addWord(tile)}
+              disabled={submitted}
+              className={`${chipBase} flex flex-col items-center bg-white border-2 border-gray-200 hover:border-primary-400 hover:bg-primary-50 disabled:opacity-50`}
+            >
+              <span>{tile.word}</span>
+              {tr && <span className="text-[11px] font-normal text-gray-400 mt-0.5">{tr}</span>}
+            </motion.button>
+          )
+        })}
       </motion.div>
 
       {!submitted && (

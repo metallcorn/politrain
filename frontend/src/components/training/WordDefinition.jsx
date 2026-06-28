@@ -61,7 +61,7 @@ export default function WordDefinition({ exercise, onAnswer, result, loading }) 
         </>
       )}
 
-      <ExerciseResult result={result} hintUsed={hintUsed} translation={exercise.translation} />
+      <ExerciseResult result={result} hintUsed={hintUsed} translation={exercise.translation} userAnswer={value} />
     </div>
   )
 }

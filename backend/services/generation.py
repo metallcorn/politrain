@@ -173,13 +173,16 @@ def _pool_active(db: Session, pool_id) -> bool:
     return bool(row[0]) if row else True
 
 
-def _pool_draw(db: Session, user_id: int, level: str, count: int, seen_norms: set | None = None) -> list:
+def _pool_draw(db: Session, user_id: int, level: str, count: int,
+               seen_norms: set | None = None, seen_skeletons: set | None = None) -> list:
     """Draw up to count unseen active exercises from the shared pool for this user at this level.
 
-    Excludes by pool_exercise_id (entries already served from the pool) AND by question_norm
-    against `seen_norms` — a question the user met via a NON-pool DailyExercise (deficit
-    generation, older entries) isn't caught by id exclusion and would resurface as "new"
-    (reports #194, feedback #99)."""
+    Excludes by pool_exercise_id (entries already served from the pool), by question_norm
+    against `seen_norms` (a question met via a NON-pool DailyExercise — reports #194/#99),
+    AND by construction skeleton against `seen_skeletons` — the pool holds many variants of
+    one template ('prezent dla mamy' / 'prezent dla brata') with different question_norm, so
+    norm-dedup alone keeps surfacing the same drill (reports #224/#225). Also dedups skeletons
+    within this single draw."""
     seen_sq = db.query(models.DailyExercise.pool_exercise_id).filter(
         models.DailyExercise.user_id == user_id,
         models.DailyExercise.pool_exercise_id.isnot(None),
@@ -189,12 +192,28 @@ def _pool_draw(db: Session, user_id: int, level: str, count: int, seen_norms: se
         models.ExercisePool.is_active == True,
         models.ExercisePool.id.notin_(seen_sq),
     )
-    if seen_norms:
-        # over-fetch then filter in Python by normalized question text
-        candidates = q.order_by(func.random()).limit(count * 4).all()
-        out = [p for p in candidates if (p.question_norm or "") not in seen_norms]
-        return out[:count]
-    return q.order_by(func.random()).limit(count).all()
+    if not seen_norms and not seen_skeletons:
+        return q.order_by(func.random()).limit(count).all()
+    # over-fetch then filter in Python by normalized text + opening-construction skeleton
+    candidates = q.order_by(func.random()).limit(count * 6).all()
+    seen_norms = seen_norms or set()
+    used_sk = set(seen_skeletons or set())
+    out = []
+    for p in candidates:
+        if (p.question_norm or "") in seen_norms:
+            continue
+        try:
+            sk = _question_skeleton(json.loads(p.content).get("question", ""))
+        except Exception:
+            sk = ""
+        if sk and sk in used_sk:
+            continue  # same construction already seen / already drawn this session
+        if sk:
+            used_sk.add(sk)
+        out.append(p)
+        if len(out) >= count:
+            break
+    return out
 
 
 def _seen_questions(user_id: int, db: Session, limit: int = 60) -> set:
@@ -1254,7 +1273,9 @@ async def _generate_daily_pool(user, db: Session, today, count: int):
         ))
 
     # Pool-first: serve unseen exercises from shared pool, generate only the deficit
-    pool_drawn = _pool_draw(db, user.id, user.level, ai_target, seen_norms=_seen_questions(user.id, db, limit=150))
+    pool_drawn = _pool_draw(db, user.id, user.level, ai_target,
+                            seen_norms=_seen_questions(user.id, db, limit=150),
+                            seen_skeletons=set(_seen_skeletons(user.id, db)))
     pool_ai_added = 0
     for pool_ex in pool_drawn:
         if pool_ai_added >= ai_target:
@@ -1364,7 +1385,9 @@ async def _generate_bonus_pool(user, db: Session, today, count: int):
     topic_id_by_slug = {t.slug: t.id for t in gen_topics}
 
     # Pool-first: serve unseen bonus exercises from shared pool at challenge level
-    pool_drawn = _pool_draw(db, user.id, challenge_level, count, seen_norms=_seen_questions(user.id, db, limit=150))
+    pool_drawn = _pool_draw(db, user.id, challenge_level, count,
+                            seen_norms=_seen_questions(user.id, db, limit=150),
+                            seen_skeletons=set(_seen_skeletons(user.id, db)))
     pool_added = 0
     for pool_ex in pool_drawn:
         if pool_added >= count:

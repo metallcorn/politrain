@@ -79,7 +79,7 @@ export default function FillBlank({ exercise, onAnswer, result, loading }) {
         </>
       )}
 
-      <ExerciseResult result={result} hintUsed={hintUsed} />
+      <ExerciseResult result={result} hintUsed={hintUsed} userAnswer={value} />
     </div>
   )
 }

@@ -1,5 +1,37 @@
 import Markdown from '../ui/Markdown'
 
+// Highlight the part of the correct answer that differs from what the user typed,
+// so the actual mistake (often just an ending) jumps out (feedback #95). Compares
+// word-by-word; within a differing word, bolds the diverging tail. Falls back to
+// bolding the whole answer when there's no usable user answer.
+function HighlightedAnswer({ answer, userAnswer }) {
+  if (!answer) return null
+  if (!userAnswer || typeof userAnswer !== 'string') return <strong>{answer}</strong>
+  const aw = answer.split(/(\s+)/)
+  const uw = userAnswer.trim().split(/\s+/)
+  let wi = 0
+  return (
+    <strong>
+      {aw.map((tok, i) => {
+        if (/^\s+$/.test(tok)) return tok
+        const u = (uw[wi] || '').toLowerCase().replace(/[.,!?;:]/g, '')
+        const a = tok.toLowerCase().replace(/[.,!?;:]/g, '')
+        wi++
+        if (u === a) return <span key={i} className="font-normal text-gray-500">{tok}</span>
+        // find shared prefix length, bold the diverging tail
+        let p = 0
+        while (p < tok.length && p < u.length && tok[p].toLowerCase() === u[p]) p++
+        return (
+          <span key={i}>
+            <span className="font-normal text-gray-500">{tok.slice(0, p)}</span>
+            <span className="text-red-700 underline decoration-2">{tok.slice(p)}</span>
+          </span>
+        )
+      })}
+    </strong>
+  )
+}
+
 // Shared result-feedback card for exercise types.
 // Keeps the green/red ✓/✗ block visually identical everywhere.
 //
@@ -10,12 +42,14 @@ import Markdown from '../ui/Markdown'
 //                       Pass false for judge_sentence (the true/false choice already shows it).
 //   variants          — array of alternative correct answers (order_words); renders "Варианты: •…"
 //   translation       — optional sentence translation shown italic-gray under the verdict
+//   userAnswer        — what the user typed; used to highlight the differing part (#95)
 export default function ExerciseResult({
   result,
   hintUsed = false,
   showCorrectAnswer = true,
   variants = null,
   translation = null,
+  userAnswer = null,
 }) {
   if (!result) return null
   const correct = result.is_correct
@@ -42,7 +76,9 @@ export default function ExerciseResult({
               {variants.map((a, i) => <p key={i} className="font-medium ml-2">• {a}</p>)}
             </div>
           : result.correct_answer && (
-              <p className="text-sm text-gray-700 mt-1">Правильный ответ: <strong>{result.correct_answer}</strong></p>
+              <p className="text-sm text-gray-700 mt-1">
+                Правильный ответ: <HighlightedAnswer answer={result.correct_answer} userAnswer={userAnswer} />
+              </p>
             )
       )}
 
