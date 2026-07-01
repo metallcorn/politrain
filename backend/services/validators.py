@@ -154,6 +154,12 @@ def _fix_mc_exercise(item: dict) -> dict | None:
         if len(listed) >= 2 and sum(1 for o in seen if o in listed) >= 2:
             return None
 
+    # Reject when the correct answer already stands as its own word in the question:
+    # "Czy ___ się boisz?" with answer "się" reads as a doubled word (report #229).
+    q_words = {_strip(w).rstrip('.?!,;') for w in re.split(r'\s+', question)}
+    if _strip(ca).rstrip('.?!,;') in q_words:
+        return None
+
     # Reject if any option is a strict substring of another option (same words with added commentary).
     # Catches "-ę" vs "-ę (без изменения)" but NOT jabłko/jabłka/jabłku (different endings).
     for i, o1 in enumerate(opts_stripped):
@@ -380,8 +386,11 @@ def _fix_order_words_exercise(item: dict) -> dict | None:
     if not question or not correct:
         return None
 
-    # Extract words from question (split by /)
+    # Extract words from question (split by /). Drop standalone punctuation tokens —
+    # Mistral sometimes splits the period into its own chip ("... / samochód / . / nowy"),
+    # which the user then has to place as a "word" (report #232).
     raw_words = [w.strip() for w in question.split("/") if w.strip()]
+    raw_words = [w for w in raw_words if re.search(r'\w', w)]
     q_words = sorted(_strip(re.sub(r'\(.*?\)', '', w).rstrip('.?!,;')) for w in raw_words)
     q_words = [w for w in q_words if w]
 

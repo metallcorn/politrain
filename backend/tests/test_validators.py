@@ -236,6 +236,12 @@ class TestFixMc:
         assert out is not None
         assert out["correct_answer"] == "ładny"  # snapped to actual option
 
+    def test_answer_already_a_word_in_question_rejected(self):
+        # report #229: "Czy ___ się boisz?" with answer "się" → doubled word
+        item = {"type": "multiple_choice", "question": "Czy ___ się boisz w ciemności?",
+                "options": ["sobie", "ty", "cię", "się"], "correct_answer": "się"}
+        assert _fix_mc_exercise(item) is None
+
 
 # ---------- fill_blank ----------
 
@@ -427,6 +433,14 @@ class TestFixOrderWords:
     def test_fewer_than_three_words_rejected(self):
         item = {"type": "order_words", "question": "Jestem / tu", "correct_answer": "Jestem tu."}
         assert _fix_order_words_exercise(item) is None
+
+    def test_standalone_punctuation_token_dropped(self):
+        # report #232: the period became its own chip
+        item = {"type": "order_words", "question": "zielony / . / nowy / samochód / widzę",
+                "correct_answer": "Widzę nowy zielony samochód."}
+        out = _fix_order_words_exercise(item)
+        assert out is not None
+        assert "." not in [w.strip() for w in out["question"].split("/")]
 
     def test_invalid_alternative_filtered_but_valid_kept(self):
         item = {"type": "order_words", "question": "Idę / do / szkoły",

@@ -18,6 +18,7 @@ import prompts
 from services import mistral
 from services.validators import (
     _norm,
+    _strip,
     _validate_type,
     _sanitize_native_fields,
     _clean_word_hints,
@@ -64,6 +65,10 @@ _TOPIC_FOCUS = {
     "negation": (
         "Делай упор на nie + dopełniacz: при отрицании biernik→dopełniacz (mam kota → nie mam kota; "
         "lubię herbatę → nie lubię herbaty). Включай двойное отрицание (nikt nic nie wie)."
+    ),
+    "instrumental": (
+        "ВАЖНО: różnica между «być/zostać + narzędnik» (jest lekarzem) и «pracować JAKO + mianownik» "
+        "(pracuje jako lekarz — НЕ lekarzem!). После jako — ИМЕНИТЕЛЬНЫЙ падеж. Не путай эти конструкции."
     ),
 }
 
@@ -174,7 +179,8 @@ def _pool_active(db: Session, pool_id) -> bool:
 
 
 def _pool_draw(db: Session, user_id: int, level: str, count: int,
-               seen_norms: set | None = None, seen_skeletons: set | None = None) -> list:
+               seen_norms: set | None = None, seen_skeletons: set | None = None,
+               seen_answers: set | None = None) -> list:
     """Draw up to count unseen active exercises from the shared pool for this user at this level.
 
     Excludes by pool_exercise_id (entries already served from the pool), by question_norm
@@ -192,24 +198,33 @@ def _pool_draw(db: Session, user_id: int, level: str, count: int,
         models.ExercisePool.is_active == True,
         models.ExercisePool.id.notin_(seen_sq),
     )
-    if not seen_norms and not seen_skeletons:
+    if not seen_norms and not seen_skeletons and not seen_answers:
         return q.order_by(func.random()).limit(count).all()
-    # over-fetch then filter in Python by normalized text + opening-construction skeleton
+    # over-fetch then filter in Python by normalized text + opening skeleton + answer word
     candidates = q.order_by(func.random()).limit(count * 6).all()
     seen_norms = seen_norms or set()
     used_sk = set(seen_skeletons or set())
+    used_ans = set(seen_answers or set())
     out = []
     for p in candidates:
         if (p.question_norm or "") in seen_norms:
             continue
         try:
-            sk = _question_skeleton(json.loads(p.content).get("question", ""))
+            d = json.loads(p.content)
         except Exception:
-            sk = ""
+            d = {}
+        sk = _question_skeleton(d.get("question", "")) if d else ""
         if sk and sk in used_sk:
             continue  # same construction already seen / already drawn this session
+        ans = None
+        if d.get("type") in _ANSWER_DEDUP_TYPES:
+            ans = _strip((d.get("correct_answer") or "")).rstrip('.?!,;')
+            if ans and ans in used_ans:
+                continue  # same target word already seen (drogeria again)
         if sk:
             used_sk.add(sk)
+        if ans:
+            used_ans.add(ans)
         out.append(p)
         if len(out) >= count:
             break
@@ -253,6 +268,31 @@ def _seen_skeletons(user_id: int, db: Session, limit: int = 80) -> Counter:
         except Exception:
             pass
     return counts
+
+
+# Types where the ANSWER word is the thing being learned — repeating it (drogeria over
+# and over, #234) wastes the slot regardless of how the riddle/phrase is worded.
+_ANSWER_DEDUP_TYPES = {"word_definition", "flashcard"}
+
+def _seen_answers(user_id: int, db: Session, limit: int = 120) -> set:
+    """Normalized answer words the user recently saw for answer-centric types, so generation
+    and pool draws don't keep serving the same target word with a reworded clue (#230/#234)."""
+    rows = db.query(models.DailyExercise).filter(
+        models.DailyExercise.user_id == user_id,
+        models.DailyExercise.source.in_(["new", "bonus", "review_ai", "topic", "topic_d"]),
+        models.DailyExercise.is_completed == True,
+    ).order_by(models.DailyExercise.completed_at.desc()).limit(limit).all()
+    result = set()
+    for de in rows:
+        try:
+            d = json.loads(de.content)
+            if d.get("type") in _ANSWER_DEDUP_TYPES:
+                ca = _strip((d.get("correct_answer") or "")).rstrip('.?!,;')
+                if ca:
+                    result.add(ca)
+        except Exception:
+            pass
+    return result
 
 
 def _build_known_vocab_block(user_id: int, db: Session) -> str:
@@ -1275,7 +1315,8 @@ async def _generate_daily_pool(user, db: Session, today, count: int):
     # Pool-first: serve unseen exercises from shared pool, generate only the deficit
     pool_drawn = _pool_draw(db, user.id, user.level, ai_target,
                             seen_norms=_seen_questions(user.id, db, limit=150),
-                            seen_skeletons=set(_seen_skeletons(user.id, db)))
+                            seen_skeletons=set(_seen_skeletons(user.id, db)),
+                            seen_answers=_seen_answers(user.id, db))
     pool_ai_added = 0
     for pool_ex in pool_drawn:
         if pool_ai_added >= ai_target:
@@ -1309,6 +1350,7 @@ async def _generate_daily_pool(user, db: Session, today, count: int):
         seen_qs = _seen_questions(user.id, db)
         seen_tokens = [set(q.split()) for q in seen_qs]
         skeletons = _seen_skeletons(user.id, db)  # Counter of opening-construction templates
+        answers = _seen_answers(user.id, db)      # answer words already seen (word_def/flashcard)
         _SKELETON_MAX = 2  # allow a construction at most twice before it feels like a drill
         validated = []
         for item in generated:
@@ -1334,8 +1376,15 @@ async def _generate_daily_pool(user, db: Session, today, count: int):
             sk = _question_skeleton(item.get("question", ""))
             if sk and skeletons[sk] >= _SKELETON_MAX:
                 continue  # same opening construction seen too often ('Na stole leży ___')
+            ans = None
+            if item.get("type") in _ANSWER_DEDUP_TYPES:
+                ans = _strip((item.get("correct_answer") or "")).rstrip('.?!,;')
+                if ans and ans in answers:
+                    continue  # same target word already learned (drogeria again, #234)
             if sk:
                 skeletons[sk] += 1
+            if ans:
+                answers.add(ans)
             seen_qs.add(qn); seen_tokens.append(set(qn.split()))  # dedup within this batch too
             validated.append(item)
         # Save ALL valid exercises to pool (populates shared pool regardless of deficit)
@@ -1387,7 +1436,8 @@ async def _generate_bonus_pool(user, db: Session, today, count: int):
     # Pool-first: serve unseen bonus exercises from shared pool at challenge level
     pool_drawn = _pool_draw(db, user.id, challenge_level, count,
                             seen_norms=_seen_questions(user.id, db, limit=150),
-                            seen_skeletons=set(_seen_skeletons(user.id, db)))
+                            seen_skeletons=set(_seen_skeletons(user.id, db)),
+                            seen_answers=_seen_answers(user.id, db))
     pool_added = 0
     for pool_ex in pool_drawn:
         if pool_added >= count:
@@ -1416,6 +1466,7 @@ async def _generate_bonus_pool(user, db: Session, today, count: int):
         seen_qs = _seen_questions(user.id, db)
         seen_tokens = [set(q.split()) for q in seen_qs]
         skeletons = _seen_skeletons(user.id, db)  # Counter of opening-construction templates
+        answers = _seen_answers(user.id, db)      # answer words already seen (word_def/flashcard)
         _SKELETON_MAX = 2  # allow a construction at most twice before it feels like a drill
         validated = []
         for item in generated:
@@ -1441,8 +1492,15 @@ async def _generate_bonus_pool(user, db: Session, today, count: int):
             sk = _question_skeleton(item.get("question", ""))
             if sk and skeletons[sk] >= _SKELETON_MAX:
                 continue  # same opening construction seen too often ('Na stole leży ___')
+            ans = None
+            if item.get("type") in _ANSWER_DEDUP_TYPES:
+                ans = _strip((item.get("correct_answer") or "")).rstrip('.?!,;')
+                if ans and ans in answers:
+                    continue  # same target word already learned (drogeria again, #234)
             if sk:
                 skeletons[sk] += 1
+            if ans:
+                answers.add(ans)
             seen_qs.add(qn); seen_tokens.append(set(qn.split()))  # dedup within this batch too
             validated.append(item)
         # Save ALL valid exercises to pool (populates shared pool regardless of deficit)
