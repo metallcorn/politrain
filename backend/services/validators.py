@@ -192,6 +192,25 @@ _PL_INTERROGATIVES = {
     "jak", "ile", "czyj", "czyja", "czyje",
 }
 
+# A fill_blank whose answer is a spelled-out numeral is unanswerable without a digit cue
+# ("zjadłem ___ jajek" → dwa? pięć? — #236) and must not split a compound numeral
+# ("dwudziestego ___ maja (5)" — #239). Stems are diacritic-stripped to match _strip output.
+# 'piec' (stove) / 'sto' (from stół) collide with numerals — weekday forms are excepted,
+# other rare collisions just discard one generated item, which is acceptable.
+_PL_NUM_EXCEPTIONS = ("piatek", "piatk", "czwartek", "czwartk")
+_PL_NUM_STEM_RE = re.compile(
+    r"^(jedn|dwa|dwie|dwoj|dwu|trzy|trzec|trzech|trzem|czter|czwart|piec|piat|"
+    r"szesc|szes|szost|siedem|siedm|siod|osiem|osm|dziewie|dziewia|dziesi|"
+    r"sto$|stu$|setn|tysia|pierwsz|drug)"
+)
+
+def _is_numeral_word(word: str) -> bool:
+    w = _strip(word).rstrip('.?!,;')
+    if any(w.startswith(x) for x in _PL_NUM_EXCEPTIONS):
+        return False
+    return bool(_PL_NUM_STEM_RE.match(w))
+
+
 def _fix_fill_blank_exercise(item: dict) -> dict | None:
     """Ensure fill_blank has exactly one ___ and the answer isn't already visible in the question."""
     if item.get("type") != "fill_blank":
@@ -217,6 +236,15 @@ def _fix_fill_blank_exercise(item: dict) -> dict | None:
     # keyboard, e.g. "litera Ł wymawia się jak ___" → "в" (Cyrillic). Report #222.
     if re.search(r'[а-яёА-ЯЁ]', correct):
         return None
+
+    # Numeral answer: without a digit cue any number fits (#236 'zjadłem ___ jajek' → dwa);
+    # and the blank must not cut a compound numeral in half (#239 'dwudziestego ___ maja (5)').
+    if any(_is_numeral_word(w) for w in correct.split()):
+        if not re.search(r'\d', question):
+            return None
+        m = re.search(r'(\S+)\s+___', question)
+        if m and _is_numeral_word(m.group(1)):
+            return None
 
     # A bare "___" with no space before it isn't a real blank: "Ona ma___ samochód"
     # reads as a glued token, the user can't tell what to fill. Report #215.
@@ -512,13 +540,15 @@ def _question_skeleton(question: str, n: int = 3) -> str:
     """Fingerprint of a question's OPENING construction: the first n significant words,
     normalized, ignoring the blank/parentheticals/numbers. Two items built on the same
     cliché collapse to one skeleton even with a different substituted word — 'Na stole leży
-    kot' and 'Na stole leży duża książka' both → 'na stole lezy'; 'Nie mam czasu na to' and
-    'Nie mam czasu na pracę' both → 'nie mam czasu'. This is what users hate ('опять что-то
-    на столе лежит', feedback #102/#108). Empty for very short questions."""
+    kot' and 'Na stole leży duża książka' both → 'na sto lez'; 'Nie mam czasu na to' and
+    'Nie mam czasu na pracę' both → 'nie mam cza'. This is what users hate ('опять что-то
+    на столе лежит', feedback #102/#108). Words are stemmed to 3 chars so inflection and
+    close variants collapse too: 'Это подарок для мамы' vs 'Этот подарок для сестры' — one
+    skeleton (report #238 slipped through on 'это' vs 'этот'). Empty for very short questions."""
     q = re.sub(r'\([^)]*\)', ' ', question)
     q = q.replace("___", " ")
     q = re.sub(r'\d+', ' ', q)
-    words = [_strip(w) for w in _SKELETON_WORD_RE.findall(q)]
+    words = [_strip(w)[:3] for w in _SKELETON_WORD_RE.findall(q)]
     words = [w for w in words if w]
     if len(words) < n + 1:   # need at least one word beyond the opening to vary
         return ""

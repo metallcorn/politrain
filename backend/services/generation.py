@@ -274,9 +274,11 @@ def _seen_skeletons(user_id: int, db: Session, limit: int = 80) -> Counter:
 # and over, #234) wastes the slot regardless of how the riddle/phrase is worded.
 _ANSWER_DEDUP_TYPES = {"word_definition", "flashcard"}
 
-def _seen_answers(user_id: int, db: Session, limit: int = 120) -> set:
+def _seen_answers(user_id: int, db: Session, limit: int = 1500) -> set:
     """Normalized answer words the user recently saw for answer-centric types, so generation
-    and pool draws don't keep serving the same target word with a reworded clue (#230/#234)."""
+    and pool draws don't keep serving the same target word with a reworded clue (#230/#234).
+    The window must be LONG: users remember a riddle for weeks — with limit=120 'cytryna'
+    fell out of the window in 5 active days and came back a 10th time (#237)."""
     rows = db.query(models.DailyExercise).filter(
         models.DailyExercise.user_id == user_id,
         models.DailyExercise.source.in_(["new", "bonus", "review_ai", "topic", "topic_d"]),
@@ -293,6 +295,29 @@ def _seen_answers(user_id: int, db: Session, limit: int = 120) -> set:
         except Exception:
             pass
     return result
+
+
+def _worddef_candidates_block(user_id: int, db: Session) -> str:
+    """Feedback #68: seed word_definition riddles with words the user has already learned
+    (reinforcement + naturally no repeats: already-riddled answers are excluded)."""
+    if db is None:
+        return ""
+    seen = _seen_answers(user_id, db)
+    rows = db.query(models.Vocabulary.polish).join(
+        models.UserVocabulary,
+        models.UserVocabulary.vocab_id == models.Vocabulary.id,
+    ).filter(
+        models.UserVocabulary.user_id == user_id,
+        models.UserVocabulary.correct_streak >= 1,
+    ).all()
+    words = [r[0] for r in rows
+             if r[0] and " " not in r[0] and len(r[0]) >= 4
+             and _strip(r[0]).rstrip('.?!,;') not in seen]
+    if len(words) < 3:
+        return ""
+    sample = random.sample(words, min(6, len(words)))
+    return ("Примерно половину загадок составь про эти слова из словаря пользователя "
+            "(закрепление изученного): " + ", ".join(sample) + ". Остальные — новые слова.\n")
 
 
 def _build_known_vocab_block(user_id: int, db: Session) -> str:
@@ -641,7 +666,7 @@ def _select_topics_for_generation(user, db: Session, n: int = 2) -> list:
     return chosen
 
 
-async def _generate_exercises(user, count: int, interest_themes_str: str, level: str = None, topics: list = None) -> list:
+async def _generate_exercises(user, count: int, interest_themes_str: str, level: str = None, topics: list = None, db=None) -> list:
     """Generate exercises in five parallel batches: grammar, lexical, judge_sentence, letter_tiles, word_definition.
 
     When topics is provided, the grammar batch is replaced with per-topic batches so exercises
@@ -678,12 +703,15 @@ async def _generate_exercises(user, count: int, interest_themes_str: str, level:
                 print(f"[idiom] {model_name} failed for user {user.id}: {type(e).__name__}: {e}")
         return []
 
+    word_def_candidates = _worddef_candidates_block(user.id, db) if db is not None else ""
+
     async def _batch(prompt_template, batch_count, label):
         prompt = prompt_template.format(
             level=gen_level,
             native_language=user.native_language,
             interest_themes=interest_themes_str,
             count=batch_count,
+            candidate_words=word_def_candidates,
         )
         if topics:
             rule_names = ", ".join(t.title_ru or t.slug for t in topics)
@@ -1315,7 +1343,7 @@ async def _generate_daily_pool(user, db: Session, today, count: int):
     # Pool-first: serve unseen exercises from shared pool, generate only the deficit
     pool_drawn = _pool_draw(db, user.id, user.level, ai_target,
                             seen_norms=_seen_questions(user.id, db, limit=150),
-                            seen_skeletons=set(_seen_skeletons(user.id, db)),
+                            seen_skeletons=set(_seen_skeletons(user.id, db, limit=300)),
                             seen_answers=_seen_answers(user.id, db))
     pool_ai_added = 0
     for pool_ex in pool_drawn:
@@ -1344,7 +1372,7 @@ async def _generate_daily_pool(user, db: Session, today, count: int):
     topic_d_entries = []
     if deficit > 0:
         generated, topic_d_entries = await asyncio.gather(
-            _generate_exercises(user, deficit, interest_themes_str, topics=gen_topics or None),
+            _generate_exercises(user, deficit, interest_themes_str, topics=gen_topics or None, db=db),
             _generate_topic_exercises_for_daily(user, db, today),
         )
         seen_qs = _seen_questions(user.id, db)
@@ -1436,7 +1464,7 @@ async def _generate_bonus_pool(user, db: Session, today, count: int):
     # Pool-first: serve unseen bonus exercises from shared pool at challenge level
     pool_drawn = _pool_draw(db, user.id, challenge_level, count,
                             seen_norms=_seen_questions(user.id, db, limit=150),
-                            seen_skeletons=set(_seen_skeletons(user.id, db)),
+                            seen_skeletons=set(_seen_skeletons(user.id, db, limit=300)),
                             seen_answers=_seen_answers(user.id, db))
     pool_added = 0
     for pool_ex in pool_drawn:
@@ -1462,7 +1490,7 @@ async def _generate_bonus_pool(user, db: Session, today, count: int):
     print(f"[bonus_pool] user={user.id} level={challenge_level} count={count} pool={pool_added} deficit={deficit}")
 
     if deficit > 0:
-        generated = await _generate_exercises(user, deficit, interest_themes_str, level=challenge_level, topics=gen_topics or None)
+        generated = await _generate_exercises(user, deficit, interest_themes_str, level=challenge_level, topics=gen_topics or None, db=db)
         seen_qs = _seen_questions(user.id, db)
         seen_tokens = [set(q.split()) for q in seen_qs]
         skeletons = _seen_skeletons(user.id, db)  # Counter of opening-construction templates

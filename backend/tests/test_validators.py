@@ -88,12 +88,18 @@ class TestQuestionSkeleton:
     def test_same_opening_different_content_collapse(self):
         a = _question_skeleton("Na stole leży kot.")
         b = _question_skeleton("Na stole leży duża czerwona książka.")
-        assert a == b and a == "na stole lezy"
+        assert a == b and a == "na sto lez"
 
     def test_blank_and_numbers_ignored(self):
         a = _question_skeleton("Nie mam czasu na ___.")
         b = _question_skeleton("Nie mam czasu na tę pracę.")
-        assert a == b == "nie mam czasu"
+        assert a == b == "nie mam cza"
+
+    def test_inflected_variants_collapse(self):
+        # report #238: 'Это подарок...' vs 'Этот подарок...' slipped past exact skeletons
+        a = _question_skeleton("Это подарок для моей мамы.")
+        b = _question_skeleton("Этот подарок для моей сестры.")
+        assert a == b != ""
 
     def test_distinct_openings_differ(self):
         a = _question_skeleton("Idę do sklepu po chleb.")
@@ -300,6 +306,30 @@ class TestFixFillBlank:
         # single-word answer differing from the printed base form is fine
         item = {"type": "fill_blank", "question": "Lubię ___ (czarny) kawę.",
                 "correct_answer": "czarną"}
+        assert _fix_fill_blank_exercise(item) is not None
+
+    def test_numeral_answer_without_digit_cue_rejected(self):
+        # report #236: "zjadłem ___ jajek" → "dwa": any numeral fits, no cue in question
+        item = {"type": "fill_blank", "question": "Na śniadanie zjadłem ___ jajek.",
+                "correct_answer": "dwa"}
+        assert _fix_fill_blank_exercise(item) is None
+
+    def test_numeral_answer_with_digit_cue_ok(self):
+        item = {"type": "fill_blank", "question": "Mam ___ lata. (2)",
+                "correct_answer": "dwa"}
+        assert _fix_fill_blank_exercise(item) is not None
+
+    def test_compound_numeral_split_by_blank_rejected(self):
+        # report #239: blank cuts "dwudziestego piątego" in half — unreadable even with (5)
+        item = {"type": "fill_blank",
+                "question": "Mój brat urodził się dwudziestego ___ maja 1995 roku. (5)",
+                "correct_answer": "piątego"}
+        assert _fix_fill_blank_exercise(item) is None
+
+    def test_weekday_is_not_a_numeral(self):
+        # piątek/czwartek share stems with piąty/czwarty but are legit non-numeral answers
+        item = {"type": "fill_blank", "question": "W ___ zawsze idę do kina wieczorem.",
+                "correct_answer": "piątek"}
         assert _fix_fill_blank_exercise(item) is not None
 
     def test_interrogative_answer_rejected(self):
