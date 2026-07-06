@@ -27,6 +27,7 @@ export default function TranslatePhrase({ exercise, onAnswer, result, loading })
           text={exercise.question}
           wordHints={wordHints}
           onHintUsed={() => setHintUsed(true)}
+          fetchMissing={false}
           className="text-xl font-semibold text-gray-800 leading-relaxed"
         />
         {hasHints && !submitted && (

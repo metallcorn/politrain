@@ -40,8 +40,8 @@ export default function JudgeSentence({ exercise, onAnswer, result, loading }) {
           saveToVocab
           className="text-xl font-semibold text-gray-900 leading-relaxed"
         />
-        {hasHints && !chosen && (
-          <p className="text-xs text-gray-400 mt-2">Подчёркнутые слова — нажми для перевода</p>
+        {!chosen && (
+          <p className="text-xs text-gray-400 mt-2">Нажми на любое слово — покажу перевод (−1 XP)</p>
         )}
         {exercise.translation && !result && (
           translationShown

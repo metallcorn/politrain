@@ -257,6 +257,19 @@ class ExercisePool(Base):
     created_at = Column(DateTime, default=func.now())
 
 
+class WordTranslationCache(Base):
+    """On-demand word translations (click-any-word in exercises), shared across users
+    per language. UNIQUE(word, lang) enforced by a migration index."""
+    __tablename__ = "word_translation_cache"
+
+    id = Column(Integer, primary_key=True, index=True)
+    word = Column(String(80), nullable=False)
+    lang = Column(String(5), nullable=False)
+    translation = Column(Text, nullable=False)
+    lemma = Column(String(80), nullable=True)
+    created_at = Column(DateTime, default=func.now())
+
+
 class DailyExercise(Base):
     __tablename__ = "daily_exercises"
 

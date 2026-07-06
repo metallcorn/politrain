@@ -33,30 +33,26 @@ export default function FillBlank({ exercise, onAnswer, result, loading }) {
   return (
     <div className="flex flex-col gap-4">
       <div className="card">
-        {hasHints ? (
-          <div className="text-lg font-medium text-gray-800 mb-1 leading-relaxed">
-            {parts.map((part, i) => (
-              <span key={i}>
-                <WordHintText
-                  text={part}
-                  wordHints={wordHints}
-                  onHintUsed={() => setHintUsed(true)}
-                  saveToVocab
-                  className="inline"
-                />
-                {i < parts.length - 1 && (
-                  <span className="inline-block mx-1 px-2 py-0.5 border-b-2 border-primary-500 text-primary-600 font-bold">___</span>
-                )}
-              </span>
-            ))}
-          </div>
-        ) : (
-          <p className="text-lg font-medium text-gray-800 mb-1">{exercise.question}</p>
-        )}
+        <div className="text-lg font-medium text-gray-800 mb-1 leading-relaxed">
+          {parts.map((part, i) => (
+            <span key={i}>
+              <WordHintText
+                text={part}
+                wordHints={wordHints}
+                onHintUsed={() => setHintUsed(true)}
+                saveToVocab
+                className="inline"
+              />
+              {i < parts.length - 1 && (
+                <span className="inline-block mx-1 px-2 py-0.5 border-b-2 border-primary-500 text-primary-600 font-bold">___</span>
+              )}
+            </span>
+          ))}
+        </div>
         {!submitted && <HintButton hint={exercise.hint} onReveal={() => setHintUsed(true)} />}
         {exercise.translation && <p className="text-sm text-gray-500 mt-1 italic">{exercise.translation}</p>}
-        {hasHints && !submitted && (
-          <p className="text-xs text-gray-400 mt-2">Подчёркнутые слова — нажми для перевода{hintUsed ? ' (−1 XP)' : ' (−1 XP)'}</p>
+        {!submitted && (
+          <p className="text-xs text-gray-400 mt-2">Нажми на любое слово — покажу перевод (−1 XP)</p>
         )}
       </div>
 

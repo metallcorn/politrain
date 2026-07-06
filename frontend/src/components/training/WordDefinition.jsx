@@ -36,8 +36,8 @@ export default function WordDefinition({ exercise, onAnswer, result, loading }) 
           saveToVocab
           className="text-lg font-medium text-gray-800 leading-relaxed"
         />
-        {hasHints && !submitted && (
-          <p className="text-xs text-gray-400 mt-2">Подчёркнутые слова — нажми для перевода</p>
+        {!submitted && (
+          <p className="text-xs text-gray-400 mt-2">Нажми на любое слово — покажу перевод (−1 XP)</p>
         )}
         {!submitted && <HintButton hint={exercise.hint} onReveal={() => setHintUsed(true)} />}
       </div>

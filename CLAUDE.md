@@ -218,6 +218,18 @@ print('marchewka in user vocab:', c.fetchone())
 # Ожидаем: ('marchewka', '<сегодня>', 0) — correct_streak=0 значит пойдёт в очередь на изучение
 ```
 
+### 9в. Перевод любого слова по клику (word-translation)
+```bash
+curl -s -X POST "http://localhost:8000/api/v1/vocabulary/word-translation" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"word": "zamiast", "context": "Pojechałbym rowerem zamiast stać w korkach."}' | \
+  python3 -c "import sys,json; d=json.load(sys.stdin); print('tr:', d['translation'], '| lemma:', d['lemma'], '| cached:', d['cached'])"
+# Ожидаем: перевод на языке юзера, lemma — словарная форма; повторный вызов → cached: True
+# В mistral_call_logs: purpose='word_translate' (small) только на первый вызов
+# UI: клик по ЛЮБОМУ слову в FillBlank/MC/Judge/LetterTiles/WordDefinition/Reading — тултип с переводом;
+# TranslatePhrase — фетча нет (родной язык)
+```
+
 ### 10. Топик-упражнения (освоенные должны быть исключены)
 ```bash
 curl -s "http://localhost:8000/api/v1/topics/accusative/lesson" -H "Authorization: Bearer $TOKEN" | \
@@ -588,6 +600,9 @@ backend/
                      `from routers.training import X` продолжает работать (тестовые сниппеты не ломать)
     topics.py      — темы, уроки, упражнения по темам
     vocabulary.py  — статистика словаря (/vocabulary/stats);
+                     POST /vocabulary/word-translation — словарь по клику на ЛЮБОЕ слово упражнения:
+                       body {word, context}; кеш WordTranslationCache (UNIQUE word+lang, общий между юзерами),
+                       miss → mistral-small (WORD_TRANSLATE_PROMPT, purpose='word_translate') → {translation, lemma, cached};
                      POST /vocabulary/learn-word — добавляет слово в словарь пользователя из подсказки:
                        body: {word: str, translation: str}; находит или создаёт Vocabulary (polish, translation_ru, level=user.level, translation_en=''),
                        создаёт UserVocabulary если не существует (next_review=today → доступно для повторения сразу);
@@ -758,7 +773,11 @@ frontend/src/
                      DashboardPage, ChatPage, ...
   components/
     training/      — FillBlank, MultipleChoice, Flashcard, WordOrder, JudgeSentence, TranslatePhrase, LetterTilesBlank, WordDefinition;
-                     WordHintText — универсальный компонент: подчёркивает польские слова из `exercise.word_hints`, по клику показывает перевод;
+                     WordHintText — универсальный компонент: КЛИКАБЕЛЬНО ЛЮБОЕ слово — pre-hint из
+                       `exercise.word_hints` (пунктирное подчёркивание) или on-demand фетч
+                       POST /vocabulary/word-translation (кеш на сервере + в state); проп `fetchMissing`
+                       (default true) — false у TranslatePhrase (текст на родном языке, фетчить нечего);
+                       кириллические слова не фетчатся (клиентский guard);
                        проп `saveToVocab` (boolean) — автоматически сохраняет кликнутое слово через POST /vocabulary/learn-word (fire-and-forget), показывает 📚 в тултипе;
                        проп `onHintUsed` — вызывается при первом клике для -1 XP отслеживания;
                        saveToVocab=true у: FillBlank, MultipleChoice, JudgeSentence, LetterTilesBlank, WordDefinition;
@@ -939,3 +958,5 @@ frontend/src/
 | Пул хранит нативные поля на языке генератора | translation/word_hints в content записаны на языке юзера-генератора (сейчас ru); не-ru юзер вытянет русские подсказки | ИЗВЕСТНОЕ ОГРАНИЧЕНИЕ: перед запуском для не-ru юзеров добавить колонку native_lang в exercise_pool и фильтр в `_pool_draw`. UI-данные (ранги, day_names, exam-тексты, achievements, фронтенд) — тоже отложены до фазы i18n UI |
 | order_words: валидный вариант с обращением отклонён («Proszę o dokumenty Panie Kowalski», #240) | small-модель браковала перенос вокатива в конец; отказ уходил юзеру без перепроверки | WORD_ORDER_CHECK_PROMPT: шаг 4 — обращение/вокатив может стоять в начале ИЛИ в конце, запятые игнорировать + пример; `_check_word_order`: вердикт false от small эскалируется на large (доп. вызов только на редком reject-пути) |
 | «Не засчитали, а что я ввёл — неизвестно» | DailyExercise не хранил ответ юзера — жалобы «всё правильно но не засчитали» неразбираемы | Колонка `daily_exercises.user_answer` (миграция в main.py), пишется в submit_answer; при разборе таких жалоб СНАЧАЛА смотреть `SELECT user_answer FROM daily_exercises WHERE id=<daily_exercise_id>` |
+| AI-объяснения неточные (фидбэк 2026-07-06) | explain endpoint работал на mistral-small; плюс повторял ошибочное explanation самого задания | explain: large-first → fallback small (объяснения кешируются — качество важнее цены); инструкция «машинное explanation задания может врать — проверь и исправь»; при таком фиксе чистить кеш: `DELETE FROM ai_explanation_cache` |
+| Не все слова предложения переводятся кликом (фидбэк 2026-07-06) | word_hints покрывают часть слов; юзер хочет переводить ЛЮБОЕ | POST /vocabulary/word-translation + WordTranslationCache (общий кеш word+lang) + WordHintText фетчит недостающее; TranslatePhrase — fetchMissing=false |

@@ -28,8 +28,8 @@ export default function MultipleChoice({ exercise, onAnswer, result }) {
           className="text-lg font-medium text-gray-800"
         />
         {!selected && <HintButton hint={exercise.hint} onReveal={() => setHintUsed(true)} />}
-        {hasHints && !selected && (
-          <p className="text-xs text-gray-400 mt-2">Подчёркнутые слова — нажми для перевода</p>
+        {!selected && (
+          <p className="text-xs text-gray-400 mt-2">Нажми на любое слово — покажу перевод (−1 XP)</p>
         )}
       </div>
 

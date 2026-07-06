@@ -1211,7 +1211,10 @@ async def explain_exercise(
             "   correct or wrong. Do not discuss the topic in general — only this error.\n"
             "2. How the rule works and how to remember it.\n"
             "3. Only if the student's answer is objectively also grammatically valid — say so honestly.\n"
-            "   If the student's answer is wrong — do not bring up the notion of flawed exercises at all.\n\n"
+            "   If the student's answer is wrong — do not bring up the notion of flawed exercises at all.\n"
+            "4. The 'Exercise's own explanation' below was machine-generated and MAY contain errors —\n"
+            "   verify it against actual Polish grammar and, if it is wrong, state the correct rule\n"
+            "   instead of repeating the mistake.\n\n"
             f"Reply in {nl}. Keep Polish words and forms in Polish."
         )
         max_tokens = 500
@@ -1244,20 +1247,27 @@ async def explain_exercise(
     if data.explanation:
         user_msg += f"Exercise's own explanation: {data.explanation}\n"
 
-    try:
-        text = await mistral.simple_prompt(
-            system=system,
-            user=user_msg,
-            temperature=0.3,
-            max_tokens=max_tokens,
-            timeout=25.0,
-            retries=1,
-            model="mistral-small-latest",
-            purpose="explain",
-            user_id=current_user.id,
-        )
-        text = text.strip()
-    except Exception:
+    # large first: explanations are cached, so quality beats the marginal cost —
+    # small produced factually shaky explanations (user feedback 2026-07-06)
+    text = None
+    for model_name in ("mistral-large-latest", "mistral-small-latest"):
+        try:
+            text = await mistral.simple_prompt(
+                system=system,
+                user=user_msg,
+                temperature=0.3,
+                max_tokens=max_tokens,
+                timeout=25.0,
+                retries=1,
+                model=model_name,
+                purpose="explain",
+                user_id=current_user.id,
+            )
+            text = text.strip()
+            break
+        except Exception:
+            continue
+    if not text:
         raise HTTPException(status_code=503, detail="AI temporarily unavailable")
 
     db.add(models.AIExplanationCache(cache_key=cache_key, level=level, text=text))

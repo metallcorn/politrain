@@ -41,8 +41,8 @@ export default function ReadingExercise({ exercise, onAnswer, result }) {
           saveToVocab
           className="text-base leading-relaxed text-gray-800"
         />
-        {Object.keys(exercise.word_hints || {}).length > 0 && !submitted && (
-          <p className="text-xs text-gray-400 mt-2">Подчёркнутые слова — нажми для перевода</p>
+        {!submitted && (
+          <p className="text-xs text-gray-400 mt-2">Нажми на любое слово — покажу перевод (−1 XP)</p>
         )}
         {submitted && exercise.translation && (
           <p className="text-sm text-gray-400 mt-3 italic border-t pt-2">{exercise.translation}</p>

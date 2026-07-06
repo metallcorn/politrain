@@ -9,6 +9,9 @@ from database import get_db
 from auth import get_current_user
 import models
 import schemas
+import prompts
+from services import mistral
+from services.i18n import lang_name
 from services.sm2 import calculate_next_review
 from services.gamification import add_xp, XP_CORRECT, XP_INCORRECT, check_achievements, update_daily_activity
 
@@ -153,6 +156,56 @@ def vocab_stats(
         "due_count": due_count,
         "pending": pending,
     }
+
+
+class WordTranslationRequest(BaseModel):
+    word: str
+    context: str | None = None
+
+
+@router.post("/word-translation")
+async def word_translation(
+    req: WordTranslationRequest,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """On-demand dictionary: translate ANY clicked word of an exercise sentence, not just
+    the ones Mistral pre-hinted. Cached per (word, lang) across all users."""
+    word = req.word.strip().strip('.,!?;:«»"\'()[]…—–').lower()
+    if not word or len(word) > 60:
+        raise HTTPException(status_code=400, detail="bad word")
+    lang = (current_user.native_language or "en").lower()
+
+    cached = db.query(models.WordTranslationCache).filter_by(word=word, lang=lang).first()
+    if cached:
+        return {"translation": cached.translation, "lemma": cached.lemma, "cached": True}
+
+    try:
+        raw = await mistral.simple_prompt(
+            system="You are a Polish dictionary for language learners. Respond only with JSON.",
+            user=prompts.WORD_TRANSLATE_PROMPT.format(
+                word=word,
+                context=(req.context or "")[:200],
+                native_language=lang_name(lang),
+            ),
+            temperature=0.1, max_tokens=120, timeout=15.0, retries=1,
+            model="mistral-small-latest",
+            purpose="word_translate", user_id=current_user.id,
+        )
+        data = await mistral.parse_json_response(raw)
+        translation = (data.get("translation") or "").strip()
+        lemma = (data.get("lemma") or "").strip() or None
+    except Exception:
+        raise HTTPException(status_code=502, detail="translation unavailable")
+    if not translation:
+        raise HTTPException(status_code=502, detail="translation unavailable")
+
+    db.add(models.WordTranslationCache(word=word, lang=lang, translation=translation, lemma=lemma))
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()  # concurrent insert hit the UNIQUE index — the value is already there
+    return {"translation": translation, "lemma": lemma, "cached": False}
 
 
 class LearnWordRequest(BaseModel):

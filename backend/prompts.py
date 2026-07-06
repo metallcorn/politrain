@@ -535,6 +535,18 @@ READING_PROMPT = (
     "}}"
 )
 
+# On-demand dictionary for any clicked word in an exercise sentence (feedback: only some
+# words had hints; the user wants EVERY word translatable). Cached in word_translation_cache.
+WORD_TRANSLATE_PROMPT = (
+    "Translate one Polish word for a learner.\n"
+    'Word: "{word}"\n'
+    'Sentence it appeared in (context): "{context}"\n\n'
+    "Give the translation into {native_language} of THIS word as used in THIS context.\n"
+    "If the word is an inflected form, also give its Polish dictionary form (lemma).\n"
+    'Answer ONLY with valid JSON, no markdown: '
+    '{{"translation": "<translation in {native_language}>", "lemma": "<Polish dictionary form>"}}'
+)
+
 WORD_DEFINITION_VERIFY_PROMPT = (
     "You are a strict editor of word-riddles for Polish learners.\n"
     "You get a list of: a word description (in Polish) and the intended answer.\n"

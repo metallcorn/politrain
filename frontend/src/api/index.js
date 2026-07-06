@@ -76,6 +76,7 @@ export const vocabApi = {
   review: (id, quality) => api.post(`/vocabulary/${id}/review`, { quality }),
   stats: () => api.get('/vocabulary/stats'),
   learnWord: (data) => api.post('/vocabulary/learn-word', data),
+  wordTranslation: (data) => api.post('/vocabulary/word-translation', data),
 }
 
 // Training

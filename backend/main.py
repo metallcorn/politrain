@@ -41,6 +41,8 @@ def _migrate():
             "ALTER TABLE mistral_call_logs ADD COLUMN error_message TEXT",
             "ALTER TABLE user_content_preferences ADD COLUMN recent_themes TEXT",
             "ALTER TABLE daily_exercises ADD COLUMN user_answer TEXT",
+            "CREATE TABLE IF NOT EXISTS word_translation_cache (id INTEGER PRIMARY KEY AUTOINCREMENT, word VARCHAR(80) NOT NULL, lang VARCHAR(5) NOT NULL, translation TEXT NOT NULL, lemma VARCHAR(80), created_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_word_translation_word_lang ON word_translation_cache(word, lang)",
         ]:
             try:
                 conn.execute(__import__('sqlalchemy').text(sql))
