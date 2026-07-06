@@ -16,6 +16,7 @@ import models
 import schemas
 import prompts
 from services import mistral
+from services.i18n import lang_name
 from services.sm2 import calculate_next_review
 from services.gamification import (
     add_xp, XP_CORRECT, XP_INCORRECT, XP_VOCAB, XP_VOCAB_NEW, XP_VOCAB_REVIEW, XP_COMPLETE_SESSION,
@@ -1184,62 +1185,63 @@ async def explain_exercise(
         return {"text": cached.text, "cached": True}
 
     type_labels = {
-        "fill_blank": "вставить пропущенное слово",
-        "multiple_choice": "выбрать правильный вариант",
-        "translate": "перевод",
-        "order_words": "составить предложение",
-        "judge_sentence": "верно / неверно",
-        "letter_tiles": "собрать слово из букв",
-        "flashcard": "карточка",
-        "word_definition": "угадай слово по описанию",
+        "fill_blank": "fill in the missing word",
+        "multiple_choice": "pick the correct option",
+        "translate": "translation",
+        "order_words": "arrange the sentence",
+        "judge_sentence": "true / false judgement",
+        "letter_tiles": "assemble the word from letters",
+        "flashcard": "flashcard",
+        "word_definition": "guess the word from its description",
     }
+    nl = lang_name(current_user.native_language)
 
     if level == 1:
         system = (
-            f"Ты учитель польского языка. "
-            f"Ученик: уровень польского {current_user.level}, родной язык: {current_user.native_language}.\n\n"
-            "Объясни результат конкретного упражнения — кратко, 3-5 предложений, без вступлений.\n\n"
-            "Структура ответа:\n"
-            "0. Если в задании есть польское предложение — выведи его перевод на "
-            f"{current_user.native_language} в начале (одной строкой, курсивом через *).\n"
-            "   Если перевод уже дан в поле «Перевод задания» — используй его.\n"
-            "1. Почему ответ верный или неверный — со ссылкой на конкретное правило польского языка.\n"
-            "   Для типа «верно/неверно»: укажи КОНКРЕТНОЕ слово или форму, которая делает предложение\n"
-            "   верным или неверным. Не рассуждай о теме вообще — только про эту ошибку.\n"
-            "2. Как это правило работает и как его запомнить.\n"
-            "3. Только если ответ ученика объективно тоже грамматически верен — честно скажи об этом.\n"
-            "   Если же ответ ученика неверен — не упоминай тему ошибок в заданиях вообще.\n\n"
-            f"Отвечай на {current_user.native_language}. Польские слова и формы оставляй в польском."
+            f"You are a Polish language teacher. "
+            f"Student: Polish level {current_user.level}, native language {nl}.\n\n"
+            "Explain the result of one specific exercise — briefly, 3-5 sentences, no preamble.\n\n"
+            "Answer structure:\n"
+            f"0. If the exercise contains a Polish sentence — start with its translation into {nl} "
+            "(one line, in *italics*).\n"
+            "   If a translation is already given in the 'Exercise translation' field — use it.\n"
+            "1. Why the answer is correct or wrong — referring to the specific Polish rule.\n"
+            "   For the true/false type: name the EXACT word or form that makes the sentence\n"
+            "   correct or wrong. Do not discuss the topic in general — only this error.\n"
+            "2. How the rule works and how to remember it.\n"
+            "3. Only if the student's answer is objectively also grammatically valid — say so honestly.\n"
+            "   If the student's answer is wrong — do not bring up the notion of flawed exercises at all.\n\n"
+            f"Reply in {nl}. Keep Polish words and forms in Polish."
         )
         max_tokens = 500
     else:
         system = (
-            f"Ты учитель польского языка. "
-            f"Ученик: уровень польского {current_user.level}, родной язык: {current_user.native_language}.\n\n"
-            "Ученик уже получил краткое объяснение и хочет разобраться глубже. "
-            "Дай развёрнутое объяснение с примерами — 8-12 предложений.\n\n"
-            "Структура ответа:\n"
-            "1. Полная формулировка правила, включая исключения\n"
-            "2. **2-3 живых примера** с переводом, демонстрирующих правило\n"
-            "3. Типичные ошибки которые делают изучающие — и как их избежать\n"
-            "4. Мнемоника или аналогия с {native_language} если есть\n\n"
-            "Используй markdown-форматирование: **жирный** для терминов, списки для примеров.\n"
-            f"Отвечай на {current_user.native_language}. Польские слова и формы оставляй в польском."
-        ).replace("{native_language}", current_user.native_language)
+            f"You are a Polish language teacher. "
+            f"Student: Polish level {current_user.level}, native language {nl}.\n\n"
+            "The student has already received a short explanation and wants to go deeper. "
+            "Give an extended explanation with examples — 8-12 sentences.\n\n"
+            "Answer structure:\n"
+            "1. The full formulation of the rule, including exceptions\n"
+            "2. **2-3 living examples** with translations demonstrating the rule\n"
+            "3. Typical mistakes learners make — and how to avoid them\n"
+            f"4. A mnemonic or an analogy with {nl} if one exists\n\n"
+            "Use markdown: **bold** for terms, lists for examples.\n"
+            f"Reply in {nl}. Keep Polish words and forms in Polish."
+        )
         max_tokens = 900
 
-    result_label = "правильно ✓" if data.is_correct else "неправильно ✗"
+    result_label = "correct ✓" if data.is_correct else "wrong ✗"
     user_msg = (
-        f"Тип задания: {type_labels.get(data.exercise_type, data.exercise_type)}\n"
-        f"Вопрос: {data.question}\n"
-        f"Правильный ответ: {data.correct_answer}\n"
-        f"Ответ ученика: {data.user_answer or '(ничего не введено)'}\n"
-        f"Засчитано: {result_label}\n"
+        f"Exercise type: {type_labels.get(data.exercise_type, data.exercise_type)}\n"
+        f"Question: {data.question}\n"
+        f"Correct answer: {data.correct_answer}\n"
+        f"Student's answer: {data.user_answer or '(nothing entered)'}\n"
+        f"Graded as: {result_label}\n"
     )
     if data.translation:
-        user_msg += f"Перевод задания: {data.translation}\n"
+        user_msg += f"Exercise translation: {data.translation}\n"
     if data.explanation:
-        user_msg += f"Пояснение в задании: {data.explanation}\n"
+        user_msg += f"Exercise's own explanation: {data.explanation}\n"
 
     try:
         text = await mistral.simple_prompt(
@@ -1308,7 +1310,7 @@ async def _check_translation(user_answer: str, correct_answer: str, question: st
         return True
     prompt = prompts.TRANSLATION_CHECK_PROMPT.format(
         level=user.level,
-        native_language=user.native_language,
+        native_language=lang_name(user.native_language),
         source_text=question,
         user_answer=user_answer,
         correct_answer=correct_answer,

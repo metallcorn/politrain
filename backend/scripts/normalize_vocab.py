@@ -28,14 +28,15 @@ from services import mistral
 DRY_RUN = "--dry-run" in sys.argv
 
 _LEMMA_PROMPT = (
-    "Ты лингвист польского языка. Дано польское слово в произвольной форме и его перевод.\n"
-    "Верни словарную (начальную) форму слова и её перевод на русский в словарной форме.\n"
-    "Словарная форма: существительное — именительный падеж ед.ч.; глагол — инфинитив; "
-    "прилагательное — мужской род ед.ч.; наречие оставь как есть.\n"
-    "Если слово УЖЕ в словарной форме — верни его без изменений.\n\n"
-    "Слово: {word}\nТекущий перевод: {translation}\n\n"
-    "Ответь ТОЛЬКО валидным JSON без markdown:\n"
-    '{{"lemma": "<словарная форма польского слова>", "translation_ru": "<перевод>", '
+    "You are a Polish linguist. Given a Polish word in an arbitrary form and its translation.\n"
+    "Return the dictionary (base) form of the word and its dictionary-form translations.\n"
+    "Dictionary form: noun — nominative singular; verb — infinitive; "
+    "adjective — masculine singular; adverb — keep as is.\n"
+    "If the word is ALREADY in dictionary form — return it unchanged.\n\n"
+    "Word: {word}\nCurrent translation: {translation}\n\n"
+    "Answer ONLY with valid JSON, no markdown (translation_ru in Russian, translation_en in English — "
+    "both always required, the dictionary is shared):\n"
+    '{{"lemma": "<dictionary form of the Polish word>", "translation_ru": "<Russian translation>", '
     '"translation_en": "<English translation>", "already_base": true|false}}'
 )
 

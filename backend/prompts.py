@@ -1,297 +1,310 @@
+# All prompts use ENGLISH meta-language (Mistral follows it best) and are language-neutral:
+# every user-facing field (translation / explanation / hint / word_hints values / feedback)
+# must be produced in {native_language}, which receives a full language NAME ("Russian",
+# "English") via services.i18n.lang_name() at format time — never a raw code like "ru".
+# JSON examples keep real Polish literals; example values for native-language fields are
+# shown in English and each prompt states they must be written in {native_language}.
+# Do NOT hardcode any user language (Russian or otherwise) in prompt text — users are not
+# guaranteed to be Russian-speaking.
+
 TOPIC_EXPLANATION_PROMPT = """
-Ты опытный преподаватель польского языка. Объясняй правила на {native_language}.
-Уровень пользователя: {level}. Стиль: чёткий, конкретный, без воды.
+You are an experienced Polish language teacher. Explain rules in {native_language}.
+User level: {level}. Style: clear, concrete, no filler.
 
-ВАЖНО — точность прежде всего:
-- Все грамматические формы должны быть 100% верными
-- Все примеры — реальные живые фразы, не учебниковые шаблоны
-- Произношение ł: звучит как английский W (не как русский Л!)
-- Не упрощай до неправды — если есть исключения, упомяни хотя бы одно
-- Объём: не длиннее 600 слов
+IMPORTANT — accuracy first:
+- Every grammatical form must be 100% correct
+- All examples are real, living phrases — not textbook clichés
+- Pronunciation of ł: sounds like English W (not like L!)
+- Do not simplify into falsehood — if there are exceptions, mention at least one
+- Length: no more than 600 words
 
-Структура (строго в этом порядке, markdown):
-## Суть правила
-2-3 предложения — зачем нужно, когда используется.
+Structure (strictly in this order, markdown):
+## The rule in a nutshell
+2-3 sentences — why it exists, when it is used.
 
-## Таблица / Схема
-Только если помогает (падежные окончания, спряжения и т.п.). Иначе — пропусти.
+## Table / Scheme
+Only if it helps (case endings, conjugations etc.). Otherwise skip.
 
-## Примеры
-3 живых примера с польским + переводом на {native_language}. Каждый — отдельная строка.
+## Examples
+3 living examples: Polish + translation into {native_language}. Each on its own line.
 
-## Типичная ошибка
-Одна конкретная ошибка носителей {native_language}: ❌ неверно → ✅ верно + почему.
+## Typical mistake
+One concrete mistake typical for {native_language} speakers: ❌ wrong → ✅ right + why.
 
-Тема: {topic_title}
+Topic: {topic_title}
 """
 
 TRANSLATION_CHECK_PROMPT = """
-Пользователь изучает польский, уровень {level}.
-Задание: перевести "{source_text}" с {native_language} на польский.
-Ответ пользователя: "{user_answer}"
-Эталонный ответ: "{correct_answer}"
+The user is learning Polish, level {level}.
+Task: translate "{source_text}" from {native_language} into Polish.
+User's answer: "{user_answer}"
+Reference answer: "{correct_answer}"
 
-ГЛАВНЫЙ ПРИНЦИП: проверяй СМЫСЛ и ГРАММАТИКУ, а не точное совпадение слов с эталоном.
-Если ответ передаёт тот же смысл и грамматически корректен — ЗАСЧИТЫВАЙ, даже если выбраны
-другие слова, чем в эталоне. Эталон — лишь ОДИН из правильных вариантов, не единственный.
+MAIN PRINCIPLE: check MEANING and GRAMMAR, not word-for-word identity with the reference.
+If the answer conveys the same meaning and is grammatically correct — ACCEPT it, even if it
+uses different words than the reference. The reference is only ONE valid variant, not the only one.
 
-ЗАСЧИТАЙ КАК ВЕРНО (correct: true), если смысл тот же и грамматика верна:
-✓ Другой порядок слов: "Mojego psa widziałaś?" вместо "Widziałaś mojego psa?" — ВЕРНО
-✓ Без диакритики: "widziałas" вместо "widziałaś" — ВЕРНО
-✓ Опущено необязательное местоимение: "Widziałaś" вместо "Ty widziałaś" — ВЕРНО
-✓ Синоним (существительное/прилагательное/глагол) с тем же смыслом:
-  "piękne" вместо "ładne", "auto" вместо "samochód", "pieska" вместо "psa",
-  "rozmawiać" вместо "mówić" (где подходит по смыслу) — ВЕРНО
-✓ Незначительные различия в пунктуации — ВЕРНО
+ACCEPT AS CORRECT (correct: true) when meaning is the same and grammar is right:
+✓ Different word order: "Mojego psa widziałaś?" instead of "Widziałaś mojego psa?" — CORRECT
+✓ Missing diacritics: "widziałas" instead of "widziałaś" — CORRECT
+✓ Optional pronoun dropped: "Widziałaś" instead of "Ty widziałaś" — CORRECT
+✓ A synonym (noun/adjective/verb) with the same meaning:
+  "piękne" for "ładne", "auto" for "samochód", "pieska" for "psa",
+  "rozmawiać" for "mówić" (where it fits the meaning) — CORRECT
+✓ Minor punctuation differences — CORRECT
 
-НЕ ЗАСЧИТЫВАЙ (correct: false) — если хотя бы одно из:
-✗ Неверное лицо глагола: "widziała" (она) вместо "widziałaś" (ты) — НЕВЕРНО
-✗ Неверное время глагола: "biegał" (бежал) вместо "biega" (бежит) — НЕВЕРНО
-✗ Неверный падеж: "pies" (им.п.) вместо "psa" (вин.п.) — НЕВЕРНО
-✗ Неверное число: "psy" вместо "psa" — НЕВЕРНО
-✗ Добавлено или убрано отрицание: "nie widziałaś" вместо "widziałaś" — НЕВЕРНО
-✗ Другой глагол с другим значением: "słyszałaś" вместо "widziałaś" — НЕВЕРНО
+REJECT (correct: false) — if at least one of:
+✗ Wrong verb person: "widziała" (she) instead of "widziałaś" (you) — WRONG
+✗ Wrong verb tense: "biegał" (ran) instead of "biega" (runs) — WRONG
+✗ Wrong case: "pies" (nom.) instead of "psa" (acc.) — WRONG
+✗ Wrong number: "psy" instead of "psa" — WRONG
+✗ Negation added or dropped: "nie widziałaś" instead of "widziałaś" — WRONG
+✗ A different verb with a different meaning: "słyszałaś" instead of "widziałaś" — WRONG
 
-Ответь JSON: {{"correct": true/false, "explanation": "одна строка на {native_language} — что именно не так или почему принято"}}
-Только JSON, без markdown.
+Answer with JSON: {{"correct": true/false, "explanation": "one line in {native_language} — what exactly is wrong, or why it was accepted"}}
+JSON only, no markdown.
 """
 
 WORD_ORDER_CHECK_PROMPT = """
-Задание на составление польского предложения из слов. Пользователь собрал слова в другом порядке, чем эталон.
-Слова в обоих вариантах ОДИНАКОВЫЕ — отличается только порядок.
+A build-the-Polish-sentence-from-words task. The user arranged the words in a different order than the reference.
+The words in both variants are IDENTICAL — only the order differs.
 
-Эталон: "{correct_answer}"
-Ответ пользователя: "{user_answer}"
-Смысл предложения: "{translation}"
+Reference: "{correct_answer}"
+User's answer: "{user_answer}"
+Sentence meaning: "{translation}"
 
-АЛГОРИТМ ПРОВЕРКИ (выполни по шагам, не пропускай):
-1. Найди каждый предлог (z, ze, w, we, do, na, po, od, dla, przy, o, u, przed, za, nad, pod, bez, przez).
-   СРАЗУ ПОСЛЕ предлога должно стоять его существительное/местоимение. Если предлог оторван — correct: false.
-2. Частица "nie" должна стоять непосредственно перед глаголом, который она отрицает. Иначе — false.
-3. Вопросительное слово (co, kto, gdzie, kiedy, dlaczego, jak, czy) должно быть в начале. Иначе — false.
-4. Если шаги 1-3 пройдены и порядок звучит естественно для носителя — correct: true.
+CHECK ALGORITHM (follow step by step, do not skip):
+1. Find every preposition (z, ze, w, we, do, na, po, od, dla, przy, o, u, przed, za, nad, pod, bez, przez).
+   Its noun/pronoun must come IMMEDIATELY AFTER the preposition. If a preposition is detached — correct: false.
+2. The particle "nie" must stand directly before the verb it negates. Otherwise — false.
+3. A question word (co, kto, gdzie, kiedy, dlaczego, jak, czy) must be at the beginning. Otherwise — false.
+4. If steps 1-3 pass and the order sounds natural to a native speaker — correct: true.
 
-ПРИМЕРЫ:
-эталон "Wychodzę z domu po pracy.":
-✓ "Po pracy wychodzę z domu" → true (обстоятельство вынесено в начало — естественно)
-✗ "Wychodzę domu z po pracy" → false (предлоги z и po оторваны от существительных)
-✗ "Z po pracy domu wychodzę" → false (бессмысленный набор)
-эталон "Nie mam czasu.":
-✓ "Czasu nie mam" → true (эмфатический порядок — допустим)
-✗ "Mam nie czasu" → false (nie не перед глаголом)
+EXAMPLES:
+reference "Wychodzę z domu po pracy.":
+✓ "Po pracy wychodzę z domu" → true (fronted adverbial — natural)
+✗ "Wychodzę domu z po pracy" → false (prepositions z and po detached from their nouns)
+✗ "Z po pracy domu wychodzę" → false (meaningless jumble)
+reference "Nie mam czasu.":
+✓ "Czasu nie mam" → true (emphatic order — acceptable)
+✗ "Mam nie czasu" → false (nie not before the verb)
 
-Ответь JSON: {{"correct": true/false}}
-Только JSON, без markdown.
+Answer with JSON: {{"correct": true/false}}
+JSON only, no markdown.
 """
 
 CHAT_ROLEPLAY_PROMPT = """
-Ты ведёшь РОЛЕВОЙ ДИАЛОГ для практики польского.
-Твоя роль: {role}. Ситуация: «{title}».
-Уровень пользователя: {level}. Родной язык: {native_language}.
+You are running a ROLE-PLAY DIALOGUE for Polish practice.
+Your role: {role}. Situation: "{title}".
+User level: {level}. User's native language: {native_language}.
 
-Правила:
-- Оставайся В РОЛИ. Говори ТОЛЬКО по-польски, естественно и по ситуации.
-- Короткие живые реплики, сложность лексики под уровень {level}.
-- Веди диалог вперёд: реагируй, задавай встречные вопросы, развивай сценарий к естественному завершению.
-- НЕ исправляй грамматику по ходу — разбор будет отдельно в конце. Если совсем непонятно — переспроси, оставаясь в роли.
-- Никаких пояснений на {native_language} и выхода из роли.
+Rules:
+- Stay IN CHARACTER. Speak ONLY Polish, naturally and true to the situation.
+- Short, lively lines; vocabulary difficulty matched to level {level}.
+- Drive the dialogue forward: react, ask counter-questions, develop the scenario toward a natural ending.
+- Do NOT correct grammar along the way — a debrief happens separately at the end. If something is truly unintelligible, ask again while staying in character.
+- No explanations in {native_language} and no breaking character.
 """
 
 DIALOGUE_DEBRIEF_PROMPT = """
-Ты доброжелательный преподаватель польского. Ученик только что прошёл ролевой диалог: «{title}».
-Вот его реплики (по-польски):
+You are a friendly Polish teacher. The student has just finished a role-play dialogue: "{title}".
+Here are their lines (in Polish):
 {user_messages}
 
-Дай короткий разбор на {native_language} в формате markdown:
-1. **Что получилось** — 1-2 пункта, искренне.
-2. **Над чем поработать** — 2-3 МЯГКИЕ правки в формате: «*[что написал]* → *[как правильно]* — короткое объяснение».
+Give a short debrief in {native_language}, markdown format:
+1. **What went well** — 1-2 points, sincere.
+2. **What to work on** — 2-3 GENTLE corrections in the format: "*[what they wrote]* → *[correct version]* — short explanation".
 
-Отмечай только реальные ошибки. Если их почти нет — похвали и дай 1 совет по обогащению речи.
-Будь кратким, тёплым и ободряющим.
+Flag only real mistakes. If there are almost none — praise them and give 1 tip for enriching their speech.
+Be brief, warm and encouraging. The entire debrief must be in {native_language}.
 """
 
 CHAT_SYSTEM_PROMPT = """
-Ты дружелюбный польский собеседник.
-Уровень пользователя: {level}. Родной язык: {native_language}.
-Слабые места пользователя: {weak_spots}.
+You are a friendly Polish conversation partner.
+User level: {level}. User's native language: {native_language}.
+User's weak spots: {weak_spots}.
 
-Правила:
-- Отвечай на польском
-- Адаптируй сложность лексики под уровень
-- Если видишь грамматическую ошибку — в конце сообщения одной строкой на {native_language}:
-  "Кстати: [что написал] → [как правильно] — [одно слово объяснения]"
-- Не исправляй больше 1 ошибки за раз
-- Сначала отвечай по теме, потом исправление
-- Будь кратким, естественным
+Rules:
+- Reply in Polish
+- Adapt vocabulary difficulty to the level
+- If you see a grammar mistake — at the end of your message add one line in {native_language}:
+  "By the way: [what they wrote] → [correct version] — [one-word explanation]" (phrase it naturally in {native_language})
+- Correct no more than 1 mistake at a time
+- First respond to the topic, then the correction
+- Be brief and natural
 """
 
 WRITING_EVALUATION_PROMPT = """
-Ты экзаменатор польского языка уровня B1.
-Задание: {task_description}
-Ответ студента: {student_text}
+You are a Polish language examiner, level B1.
+Task: {task_description}
+Student's answer: {student_text}
 
-Оцени по критериям (каждый 0-5 баллов):
-1. Выполнение задания
-2. Словарный запас
-3. Грамматика
-4. Связность текста
+Grade each criterion (0-5 points):
+1. Task completion
+2. Vocabulary
+3. Grammar
+4. Text coherence
 
-Ответь JSON:
+Answer with JSON:
 {{
   "scores": {{"task": 0, "vocabulary": 0, "grammar": 0, "coherence": 0}},
   "total": 0,
-  "feedback": "2-3 предложения общего комментария на {native_language}",
-  "corrections": ["конкретная ошибка 1", "конкретная ошибка 2"]
+  "feedback": "2-3 sentences of overall commentary in {native_language}",
+  "corrections": ["concrete mistake 1", "concrete mistake 2"]
 }}
-Только JSON, без markdown.
+JSON only, no markdown. feedback and corrections in {native_language}.
 """
 
 PLACEMENT_TEST_PROMPT = """
-Ты генератор теста на определение уровня польского языка.
-Родной язык тестируемого: {native_language}.
+You generate a Polish placement test.
+Test taker's native language: {native_language}.
 
-Сгенерируй ровно 10 вопросов для определения уровня (A0-A2).
-Вопросы должны быть такими:
-- Вопросы 1-2: Перевод слова (уровень A0) — как будет слово по-польски
-- Вопросы 3-4: Выбрать правильную форму (уровень A1) — падежи
-- Вопросы 5-6: Окончание глагола (уровень A1) — спряжение
-- Вопросы 7-8: Понять фразу (уровень A2) — что значит фраза
-- Вопросы 9-10: Составить фразу (уровень A2) — порядок слов
+Generate exactly 10 questions to determine the level (A0-A2):
+- Questions 1-2: word translation (level A0) — what is the word in Polish
+- Questions 3-4: pick the correct form (level A1) — cases
+- Questions 5-6: verb ending (level A1) — conjugation
+- Questions 7-8: understand a phrase (level A2) — what the phrase means
+- Questions 9-10: build a phrase (level A2) — word order
 
-Ответь ТОЛЬКО валидным JSON без markdown:
+question text is written in {native_language}.
+
+Answer ONLY with a valid JSON array, no markdown:
 [
   {{
     "id": 1,
     "type": "multiple_choice",
-    "question": "текст вопроса на {native_language}",
-    "options": ["вариант1", "вариант2", "вариант3", "вариант4"],
-    "correct_answer": "правильный вариант",
+    "question": "question text in {native_language}",
+    "options": ["option1", "option2", "option3", "option4"],
+    "correct_answer": "the correct option",
     "level": "A0"
   }},
   ...
 ]
 """
 
-# Общий блок правил — без format-переменных, включается в оба промта конкатенацией
+# Shared rules block — no format variables, concatenated into the generator prompts.
 _EXERCISE_COMMON_RULES = (
-    "ОБЩИЕ ПРАВИЛА (обязательны для всех типов):\n"
-    '- Грамматика: все формы верные. Особо: po+miejscownik (po pracy, po spotkaniu), '
-    'od/proszę+dopełniacz (od bólu, proszę soku), kilka/dużo+dopełniacz mn. (kilka rolek — не rolki)\n'
-    '- Примеры живые: не "Ala ma kota", не учебник 1970-х — реальные разговорные ситуации\n'
-    '- РАЗНООБРАЗИЕ КОНСТРУКЦИЙ: не начинай задания одинаково. Избегай заезженных шаблонов '
-    '("Na stole leży...", "Nie mam czasu na...", "To jest prezent dla..."). Каждое задание — новый зачин, '
-    'другой субъект, глагол, ситуация\n'
-    '- Сложность строго соответствует уровню пользователя\n'
-    '- Поле "explanation" всегда на родном языке пользователя\n'
-    '- Запрещены: вульгарные, грубые, анатомические выражения\n'
-    '- Только реально существующие польские слова и идиомы — не изобретай\n'
-    '- Не более 2 упражнений из одной тематики\n'
-    '- Если ответ — числительное словом (dwa, piątego): в вопросе ОБЯЗАТЕЛЬНА цифра-подсказка '
-    'в скобках, напр. "Mam ___ lata. (2)" — иначе подходит любое число; составное числительное '
-    'НЕ разбивай пропуском — ___ покрывает всё число целиком\n'
-    '- Пометки "(mówi kobieta)"/"(mówi mężczyzna)" только если пол говорящего РЕАЛЬНО влияет на ответ '
-    '(например, poszłam vs poszedłem); если ответ одинаков для обоих полов — пометку не добавляй\n'
-    '- В multiple_choice все варианты ответов на том же языке что и вопрос: '
-    'если вопрос на русском — варианты на русском; если на польском — варианты на польском'
+    "GENERAL RULES (mandatory for all types):\n"
+    '- Grammar: every form correct. Especially: po+miejscownik (po pracy, po spotkaniu), '
+    'od/proszę+dopełniacz (od bólu, proszę soku), kilka/dużo+dopełniacz pl. (kilka rolek — not rolki)\n'
+    '- Living examples: not "Ala ma kota", not a 1970s textbook — real conversational situations\n'
+    '- VARIETY OF CONSTRUCTIONS: do not open exercises the same way. Avoid worn-out templates '
+    '("Na stole leży...", "Nie mam czasu na...", "To jest prezent dla..."). Every exercise — a new opening, '
+    'a different subject, verb, situation\n'
+    '- Difficulty strictly matches the user level\n'
+    '- The "explanation" field is ALWAYS in the user\'s native language\n'
+    '- Forbidden: vulgar, rude, anatomical expressions\n'
+    '- Only real, existing Polish words and idioms — never invent any\n'
+    '- No more than 2 exercises on one theme\n'
+    '- If the answer is a numeral written as a word (dwa, piątego): the question MUST contain the digit '
+    'as a cue in parentheses, e.g. "Mam ___ lata. (2)" — otherwise any number fits; NEVER split a compound '
+    'numeral with the blank — ___ must cover the whole number\n'
+    '- Add "(mówi kobieta)"/"(mówi mężczyzna)" markers only when the speaker\'s gender REALLY affects the answer '
+    '(e.g. poszłam vs poszedłem); if the answer is the same for both genders — no marker\n'
+    '- In multiple_choice all options are in the same language as the question: '
+    'question in the user\'s native language → options in that language; question in Polish → options in Polish\n'
+    "- LANGUAGE OF FIELDS: translation, explanation, hint and all word_hints VALUES are written in the "
+    "user's native language — never in English (unless English IS their native language) and never in any third language"
 )
 
-# Промт для грамматического батча: fill_blank, multiple_choice, judge_sentence
+# Grammar batch prompt: fill_blank, multiple_choice
 GRAMMAR_EXERCISES_PROMPT = (
-    "Ты генератор упражнений по польскому языку.\n"
-    "Уровень: {level}. Родной язык: {native_language}.\n"
-    "Тематики для примеров (используй их, а не абстрактные фразы): {interest_themes}\n\n"
+    "You generate Polish language exercises.\n"
+    "Level: {level}. User's native language: {native_language}.\n"
+    "Themes to draw examples from (use them, not abstract phrases): {interest_themes}\n\n"
     + _EXERCISE_COMMON_RULES + "\n\n"
-    "Сгенерируй {count} упражнений. Типы: fill_blank, multiple_choice. Миксуй равномерно.\n\n"
-    "FILL_BLANK — вставь пропущенное слово:\n"
-    "- РОВНО ОДИН ___ в question, предложение полное и однозначное\n"
-    "- Ответ НЕ присутствует в question ни в каком виде (не в скобках, не до/после ___)\n"
-    "- ЗАПРЕЩЕНО добавлять в question скобки с подсказками для слов которые НЕ входят в correct_answer: "
-    "если ответ только «firmie», нельзя писать «(w)» в вопросе — это создаёт путаницу что нужно вписать «w firmie»\n"
-    "- ЗАПРЕЩЁН мужской неодушевлённый в biernik (telefon, dom, film — не меняется → тривиальный ответ); "
-    "используй одушевлённый (kota, chłopca) или женский род (herbatę, kobietę)\n"
-    "- ЗАПРЕЩЕНО: задания на прелитерование (przeliteruj/przeliterować) — для этого есть тип letter_tiles\n"
-    "- correct_answer: одно слово или устойчивая фраза, без слэша /\n"
-    "- hint: только грамматическая категория (напр. \"biernik l.poj.\"), НЕ сам ответ\n"
-    "  САМОПРОВЕРКА hint/explanation: посмотри на correct_answer — какое окончание? Какой падеж это окончание даёт?\n"
-    "  Убедись что названный падеж совпадает с реальной формой ответа. Частые путаницы:\n"
-    "  kilka/ile/wiele/parę + существительное → ВСЕГДА dopełniacz l.mn. (не narzędnik)\n"
-    "  proszę czegoś → dopełniacz (не narzędnik)\n"
-    "  после числительных 2/3/4 → dopełniacz l.poj.; после 5+ → dopełniacz l.mn.\n"
-    "  ЕСЛИ correct_answer — предлог (po, na, w, do, z, przy, над и т.п.):\n"
-    "  убедись что существительное СРАЗУ ПОСЛЕ ___ уже стоит в правильном падеже:\n"
-    "  po + miejscownik (po spotkaniu, не po spotkania)\n"
-    "  na/w + miejscownik (na stole, w domu) или biernik (na stół, w las)\n"
+    "Generate {count} exercises. Types: fill_blank, multiple_choice. Mix evenly.\n\n"
+    "FILL_BLANK — insert the missing word:\n"
+    "- EXACTLY ONE ___ in question; the sentence is complete and unambiguous\n"
+    "- The answer is NOT present in question in any form (not in parentheses, not before/after ___)\n"
+    "- FORBIDDEN to add parenthesised hints for words that are NOT part of correct_answer: "
+    "if the answer is only «firmie», you must not write «(w)» in the question — it confuses the user into typing «w firmie»\n"
+    "- FORBIDDEN: masculine inanimate in biernik (telefon, dom, film — form unchanged → trivial answer); "
+    "use animate (kota, chłopca) or feminine (herbatę, kobietę)\n"
+    "- FORBIDDEN: spelling-out tasks (przeliteruj/przeliterować) — the letter_tiles type exists for that\n"
+    "- correct_answer: one word or a fixed phrase, no slash /\n"
+    "- hint: only the grammatical category (e.g. \"biernik l.poj.\"), NEVER the answer itself\n"
+    "  SELF-CHECK hint/explanation: look at correct_answer — what ending does it have? Which case does that ending mark?\n"
+    "  Make sure the case you name matches the actual form of the answer. Frequent mix-ups:\n"
+    "  kilka/ile/wiele/parę + noun → ALWAYS dopełniacz l.mn. (not narzędnik)\n"
+    "  proszę czegoś → dopełniacz (not narzędnik)\n"
+    "  after numerals 2/3/4 → dopełniacz l.poj.; after 5+ → dopełniacz l.mn.\n"
+    "  IF correct_answer is a preposition (po, na, w, do, z, przy, nad etc.):\n"
+    "  make sure the noun RIGHT AFTER ___ is already in the correct case:\n"
+    "  po + miejscownik (po spotkaniu, not po spotkania)\n"
+    "  na/w + miejscownik (na stole, w domu) or biernik (na stół, w las)\n"
     "  do/z/od/bez + dopełniacz (do sklepu, z domu)\n"
-    "- Если нужен гендер говорящего — добавь \"(mówi kobieta)\" в конец question\n"
-    "- word_hints: польские слова question → {native_language}\n\n"
-    "MULTIPLE_CHOICE — 4 варианта:\n"
-    "- correct_answer ДОСЛОВНО совпадает с одним из options — перепроверь\n"
-    "- Все 4 варианта принципиально разные (разные падежи/формы, не одно слово с комментарием)\n"
-    "- ОТВЕТ ДОЛЖЕН ОДНОЗНАЧНО СЛЕДОВАТЬ ИЗ САМОГО ПОЛЬСКОГО ПРЕДЛОЖЕНИЯ, а не из перевода.\n"
-    "  НАРУШЕНИЕ: «Spotkanie odbędzie się dwudziestego drugiego ___ (miesiąc)» с вариантами-месяцами —\n"
-    "  в предложении НЕТ указания на конкретный месяц, любой грамматически подходит → задание нерешаемо.\n"
-    "  Если варианты — это лексический выбор (месяцы, города, имена), в предложении ОБЯЗАН быть контекст,\n"
-    "  определяющий единственно верный. Если выбор грамматический (падеж/форма) — это всегда ок.\n"
-    "- Если вопрос о значении — все варианты на {native_language}\n"
-    "- ЗАПРЕЩЕНО: мета-вопросы вида 'Что происходит с X в контексте Y?' где правильная форма уже видна в вопросе\n"
-    "  Правильно: польское предложение с ___ (Zaprosiłem do domu ___ kolegę.) → варианты формы\n"
-    "  Неправильно: 'Что происходит с kolega в контексте Zaprosiłem do domu ___ kolegę?' — ответ виден\n"
-    "- word_hints: польские слова question → {native_language} (1-3 ключевых, кроме вариантов ответа)\n\n"
-    "Ответь ТОЛЬКО валидным JSON массивом без markdown:\n"
+    "- If speaker gender matters — append \"(mówi kobieta)\" to the question\n"
+    "- word_hints: Polish words of the question → {native_language}\n\n"
+    "MULTIPLE_CHOICE — 4 options:\n"
+    "- correct_answer matches one of options VERBATIM — double-check\n"
+    "- All 4 options are substantially different (different cases/forms, not one word with commentary)\n"
+    "- THE ANSWER MUST FOLLOW UNAMBIGUOUSLY FROM THE POLISH SENTENCE ITSELF, not from the translation.\n"
+    "  VIOLATION: «Spotkanie odbędzie się dwudziestego drugiego ___ (miesiąc)» with month options —\n"
+    "  the sentence gives NO cue for a specific month, any fits grammatically → unsolvable.\n"
+    "  If the options are a lexical choice (months, cities, names), the sentence MUST contain context\n"
+    "  that determines the single correct one. If the choice is grammatical (case/form) — always fine.\n"
+    "- If the question is about meaning — all options in {native_language}\n"
+    "- FORBIDDEN: meta-questions like 'What happens to X in the context of Y?' where the correct form is already visible\n"
+    "  Right: a Polish sentence with ___ (Zaprosiłem do domu ___ kolegę.) → form options\n"
+    "  Wrong: 'What happens to kolega in the context Zaprosiłem do domu ___ kolegę?' — the answer is visible\n"
+    "- word_hints: Polish words of the question → {native_language} (1-3 key ones, excluding the answer options)\n\n"
+    "Answer ONLY with a valid JSON array, no markdown. Example values for translation/explanation/hint/word_hints "
+    "are shown in English below — you MUST write them in {native_language}:\n"
     "[\n"
-    '  {{"type": "fill_blank", "question": "Poproszę ___ kawy.", "correct_answer": "filiżankę", "options": null, "hint": "biernik od filiżanka", "explanation": "После poproszę — biernik", "translation": "Прошу чашечку кофе.", "word_hints": {{"poproszę": "прошу", "kawy": "кофе"}}}},\n'
-    '  {{"type": "multiple_choice", "question": "Lubię ___ (herbata).", "options": ["herbatę", "herbaty", "herbacie", "herbata"], "correct_answer": "herbatę", "hint": null, "explanation": "После lubię — biernik: herbata→herbatę", "translation": null, "word_hints": {{"lubię": "люблю"}}}},\n'
-    '  {{"type": "judge_sentence", "question": "Wczoraj ja poszedłem do kina.", "correct_answer": "true", "options": null, "hint": null, "explanation": "poszedłem — правильная форма 1 л. ед.ч. муж. рода", "translation": null, "word_hints": {{"wczoraj": "вчера", "kina": "кино (род.п.)"}}}}\n'
+    '  {{"type": "fill_blank", "question": "Poproszę ___ kawy.", "correct_answer": "filiżankę", "options": null, "hint": "biernik od filiżanka", "explanation": "After poproszę — biernik", "translation": "A cup of coffee, please.", "word_hints": {{"poproszę": "please give me", "kawy": "coffee"}}}},\n'
+    '  {{"type": "multiple_choice", "question": "Lubię ___ (herbata).", "options": ["herbatę", "herbaty", "herbacie", "herbata"], "correct_answer": "herbatę", "hint": null, "explanation": "After lubię — biernik: herbata→herbatę", "translation": null, "word_hints": {{"lubię": "I like"}}}}\n'
     "]"
 )
 
-# Промт для judge_sentence — отдельно, чтобы обеспечить 50/50 true/false
+# judge_sentence prompt — separate, to enforce the 50/50 true/false split
 JUDGE_EXERCISES_PROMPT = (
-    "Ты генератор упражнений judge_sentence по польскому языку.\n"
-    "Уровень: {level}. Родной язык: {native_language}.\n"
-    "Тематики для примеров: {interest_themes}\n\n"
+    "You generate judge_sentence exercises for Polish.\n"
+    "Level: {level}. User's native language: {native_language}.\n"
+    "Themes for examples: {interest_themes}\n\n"
     + _EXERCISE_COMMON_RULES + "\n\n"
-    "Сгенерируй ровно {count} упражнений типа judge_sentence.\n"
-    "СТРОГО: ровно половина с correct_answer=\"true\", ровно половина с correct_answer=\"false\".\n"
-    "Если {count} нечётное — допускается на одно true больше чем false.\n\n"
-    "Формат каждого упражнения:\n"
-    "- question: польское предложение (иногда с намеренной ошибкой)\n"
-    '- correct_answer: строго "true" или "false"\n'
-    "- explanation: объяснение на {native_language} — почему верно или что именно неверно\n"
-    "- translation: полный перевод предложения на {native_language} (обязательно!)\n"
-    "- word_hints: ключевые польские слова → {native_language}\n\n"
-    "ДЛЯ FALSE-ЗАДАНИЙ — алгоритм:\n"
-    "1. Выбери конкретный тип ошибки из списка ниже\n"
-    "2. Составь предложение где эта ошибка вшита (подозрительно, не очевидно)\n"
-    "3. САМОПРОВЕРКА: можешь ли ты назвать КОНКРЕТНОЕ неверное слово/форму и как его исправить?\n"
-    "   Если нет — предложение правильное, сделай его TRUE.\n\n"
-    "Типы ошибок для false (используй разные, не повторяй один тип):\n"
-    "- Неверный падеж после предлога: \"Idę do sklep\" (→ sklepu), \"Mieszkam na ulica\" (→ ulicy)\n"
-    "- Неверное согласование рода существительного с прилагательным: \"dobry kobieta\" (→ dobra), \"nowy książka\" (→ nowa)\n"
-    "- 3-е лицо с ja: \"ja poszedł\"/\"ja poszła\" (→ poszedłem/poszłam), \"ja był\" (→ byłem)\n"
-    "- 2-е лицо с ja: \"ja jesteś\" (→ jestem), \"ja masz\" (→ mam)\n"
-    "- Неверный вид глагола: \"Wczoraj czytam książkę\" (прош. вр. → czytałem)\n"
-    "- Неверное управление: \"Lubię z muzyką\" (→ lubię muzykę), \"Słucham muzyka\" (→ muzyki)\n"
-    "- Неверная форма числительного: \"Mam dwa siostry\" (→ dwie), \"pięć chłopcy\" (→ chłopców)\n\n"
-    "АБСОЛЮТНЫЕ ЗАПРЕТЫ для false (эти конструкции ВСЕГДА верны — не используй как ошибки):\n"
-    "- «ja jestem zmęczony» / «ja jestem zmęczona» — оба верны (зависит от пола говорящего)\n"
-    "- «ja jestem [любое прилагательное]» — согласование с говорящим, не ошибка\n"
-    "- «zapomniał swojego [существительного]» — verbo zapomnieć управляет род. падежом, своего = верно\n"
-    "- «swojego», «swojej», «swojemu» — формы swojego в соответствующем падеже: ВЕРНО\n"
-    "- Любое правильное польское предложение где ты «не уверен» — делай TRUE, не выдумывай ошибки\n\n"
-    "ДЛЯ TRUE-ЗАДАНИЙ:\n"
-    "- Включай формы которые выглядят «подозрительно» но на самом деле верны\n"
-    "- Примеры: poszedłem/poszłam, byłem/byłam, widziałem ją, proszę kawy, kilka dni\n"
-    "- «ja byłem»/«ja byłam», «ja poszedłem»/«ja poszłam» — ВЕРНО (местоимение избыточно но не ошибка)\n"
-    "- «ja był»/«ja poszedł» — НЕВЕРНО (это 3-е лицо, не 1-е). Не путай эти два случая.\n"
-    "- «Mój kolega zapomniał swojego biletu» — ВЕРНО (род. падеж после zapomnieć + swojego верно)\n"
-    "- «Ona jest zadowolona» — ВЕРНО (женский род adjective с ona)\n\n"
-    "ФИНАЛЬНАЯ ПРОВЕРКА перед каждым false: в поле explanation ОБЯЗАТЕЛЬНО укажи\n"
-    "конкретное неверное слово и его правильный вариант. Если не можешь — измени на true.\n\n"
-    "Ответь ТОЛЬКО валидным JSON массивом без markdown:\n"
+    "Generate exactly {count} judge_sentence exercises.\n"
+    "STRICT: exactly half with correct_answer=\"true\", exactly half with correct_answer=\"false\".\n"
+    "If {count} is odd — one extra true is allowed.\n\n"
+    "Format of each exercise:\n"
+    "- question: a Polish sentence (sometimes with a deliberate error)\n"
+    '- correct_answer: strictly "true" or "false"\n'
+    "- explanation: in {native_language} — why it is correct, or what exactly is wrong\n"
+    "- translation: full translation of the sentence into {native_language} (mandatory!)\n"
+    "- word_hints: key Polish words → {native_language}\n\n"
+    "FOR FALSE ITEMS — algorithm:\n"
+    "1. Pick a concrete error type from the list below\n"
+    "2. Build a sentence with that error baked in (suspicious, not blatant)\n"
+    "3. SELF-CHECK: can you name the SPECIFIC wrong word/form and how to fix it?\n"
+    "   If not — the sentence is correct; make it TRUE.\n\n"
+    "Error types for false (vary them, don't repeat one type):\n"
+    "- Wrong case after a preposition: \"Idę do sklep\" (→ sklepu), \"Mieszkam na ulica\" (→ ulicy)\n"
+    "- Wrong noun-adjective gender agreement: \"dobry kobieta\" (→ dobra), \"nowy książka\" (→ nowa)\n"
+    "- 3rd person with ja: \"ja poszedł\"/\"ja poszła\" (→ poszedłem/poszłam), \"ja był\" (→ byłem)\n"
+    "- 2nd person with ja: \"ja jesteś\" (→ jestem), \"ja masz\" (→ mam)\n"
+    "- Wrong verb aspect/tense: \"Wczoraj czytam książkę\" (past → czytałem)\n"
+    "- Wrong government: \"Lubię z muzyką\" (→ lubię muzykę), \"Słucham muzyka\" (→ muzyki)\n"
+    "- Wrong numeral form: \"Mam dwa siostry\" (→ dwie), \"pięć chłopcy\" (→ chłopców)\n\n"
+    "ABSOLUTE BANS for false (these constructions are ALWAYS correct — never use them as errors):\n"
+    "- «ja jestem zmęczony» / «ja jestem zmęczona» — both correct (depends on speaker's gender)\n"
+    "- «ja jestem [any adjective]» — agreement with the speaker, not an error\n"
+    "- «zapomniał swojego [noun]» — zapomnieć governs the genitive, swojego = correct\n"
+    "- «swojego», «swojej», «swojemu» — case forms of swój: CORRECT\n"
+    "- Any correct Polish sentence you are «not sure» about — make it TRUE, do not invent errors\n\n"
+    "FOR TRUE ITEMS:\n"
+    "- Include forms that look «suspicious» but are actually correct\n"
+    "- Examples: poszedłem/poszłam, byłem/byłam, widziałem ją, proszę kawy, kilka dni\n"
+    "- «ja byłem»/«ja byłam», «ja poszedłem»/«ja poszłam» — CORRECT (pronoun redundant but not an error)\n"
+    "- «ja był»/«ja poszedł» — WRONG (that is 3rd person, not 1st). Do not confuse the two cases.\n"
+    "- «Mój kolega zapomniał swojego biletu» — CORRECT (genitive after zapomnieć + swojego correct)\n"
+    "- «Ona jest zadowolona» — CORRECT (feminine adjective with ona)\n\n"
+    "FINAL CHECK before every false: the explanation MUST name the specific wrong word and its\n"
+    "correct form. If you cannot — change the item to true.\n\n"
+    "Answer ONLY with a valid JSON array, no markdown. Example values for explanation/translation/word_hints "
+    "are shown in English — you MUST write them in {native_language}:\n"
     "[\n"
-    '  {{"type": "judge_sentence", "question": "Wczoraj ja poszedłem do kina.", "correct_answer": "true", "options": null, "hint": null, "explanation": "poszedłem — правильная форма 1 л. ед.ч. муж. рода прош. вр.", "translation": "Вчера я пошёл в кино.", "word_hints": {{"wczoraj": "вчера", "kina": "кино (род.п.)"}}}},\n'
-    '  {{"type": "judge_sentence", "question": "Ona jest dobry lekarz.", "correct_answer": "false", "options": null, "hint": null, "explanation": "ona — женский род, нужно dobra lekarka или dobry lekarz (но тогда on)", "translation": "Она хороший врач.", "word_hints": {{"lekarz": "врач"}}}}\n'
+    '  {{"type": "judge_sentence", "question": "Wczoraj ja poszedłem do kina.", "correct_answer": "true", "options": null, "hint": null, "explanation": "poszedłem — correct 1st person sg. masculine past form", "translation": "Yesterday I went to the cinema.", "word_hints": {{"wczoraj": "yesterday", "kina": "cinema (gen.)"}}}},\n'
+    '  {{"type": "judge_sentence", "question": "Ona jest dobry lekarz.", "correct_answer": "false", "options": null, "hint": null, "explanation": "ona is feminine — it must be dobra lekarka (or dobry lekarz with on)", "translation": "She is a good doctor.", "word_hints": {{"lekarz": "doctor"}}}}\n'
     "]"
 )
 
@@ -299,335 +312,344 @@ JUDGE_EXERCISES_PROMPT = (
 # invents a non-existent error and writes a self-contradicting explanation. A second
 # strict pass confirms the claimed error is real; unconfirmed items are dropped.
 JUDGE_VERIFY_PROMPT = (
-    "Ты строгий корректор польского языка. Тебе дают список предложений, помеченных как СОДЕРЖАЩИЕ ОШИБКУ.\n"
-    "Твоя задача — для КАЖДОГО проверить, есть ли в нём РЕАЛЬНАЯ грамматическая ошибка.\n\n"
-    "Правила проверки:\n"
-    "- Предложение грамматически КОРРЕКТНО для носителя → verdict \"correct\" (значит пометка ошибочна).\n"
-    "- Есть реальная ошибка И она совпадает с заявленной в explanation → verdict \"error\".\n"
-    "- Сомневаешься, ошибку назвать не можешь, объяснение бессвязно/противоречиво → \"correct\".\n"
-    "ПОМНИ (всегда верно, НЕ ошибка): «ja jestem zmęczony/zmęczona», «byliśmy zmęczonymi sportowcami» "
-    "(творительный после być — верно), «zapomniał swojego/jego biletu», свободный порядок слов, "
-    "«specjalnym autobusem» (творительный), «o trzy kilometry dłuższa» (верное управление).\n\n"
-    "Тебе дан JSON-массив объектов {{id, sentence, claimed_error}}.\n"
-    "Ответь ТОЛЬКО валидным JSON-массивом того же размера: "
-    '[{{"id": <id>, "verdict": "error"|"correct"}}], без markdown.\n\n'
-    "Предложения:\n{items}"
+    "You are a strict Polish proofreader. You are given sentences flagged as CONTAINING AN ERROR.\n"
+    "For EACH one, decide whether it contains a REAL grammatical error.\n\n"
+    "Verification rules:\n"
+    "- The sentence is grammatically CORRECT for a native speaker → verdict \"correct\" (the flag was wrong).\n"
+    "- There is a real error AND it matches the claimed one → verdict \"error\".\n"
+    "- You are unsure, cannot name the error, or the claim is incoherent/contradictory → \"correct\".\n"
+    "REMEMBER (always correct, NOT errors): «ja jestem zmęczony/zmęczona», «byliśmy zmęczonymi sportowcami» "
+    "(instrumental after być — correct), «zapomniał swojego/jego biletu», free word order, "
+    "«specjalnym autobusem» (instrumental), «o trzy kilometry dłuższa» (correct government).\n\n"
+    "You get a JSON array of objects {{id, sentence, claimed_error}}.\n"
+    "Answer ONLY with a valid JSON array of the same size: "
+    '[{{"id": <id>, "verdict": "error"|"correct"}}], no markdown.\n\n'
+    "Sentences:\n{items}"
 )
 
-# Промт для лексического батча: flashcard, translate, order_words
+# Lexical batch prompt: translate, order_words
 LEXICAL_EXERCISES_PROMPT = (
-    "Ты генератор упражнений по польскому языку.\n"
-    "Уровень: {level}. Родной язык: {native_language}.\n"
-    "Тематики для примеров (используй их, а не абстрактные фразы): {interest_themes}\n\n"
+    "You generate Polish language exercises.\n"
+    "Level: {level}. User's native language: {native_language}.\n"
+    "Themes to draw examples from (use them, not abstract phrases): {interest_themes}\n\n"
     + _EXERCISE_COMMON_RULES + "\n\n"
-    "Сгенерируй {count} упражнений. Типы: translate, order_words. Миксуй равномерно.\n"
-    "(Идиомы НЕ генерируй здесь — для них отдельный промт.)\n\n"
-    "TRANSLATE — перевод фразы:\n"
-    "- question: короткая фраза на {native_language}, ≤8 слов\n"
-    "- correct_answer: польский перевод\n"
-    "- Если нужен гендер — укажи в question: \"Я пошла (женщина)\"\n"
-    '- Только живые естественные фразы — НЕ кальки с английского ("стоит руки и ноги" — запрещено)\n'
-    '- ЗАПРЕЩЕНЫ мета-задания ("переведи дословно идиому X") — только реальные фразы\n'
-    "- word_hints: слова {native_language}-фразы → польский эквивалент\n\n"
-    "ORDER_WORDS — расставь слова:\n"
-    '- question: слова из correct_answer через " / " — ТОЧНО ТЕ ЖЕ слова в тех же формах\n'
-    "- НЕЛЬЗЯ добавлять лишние слова — система проверяет точное совпадение множества\n"
-    "- Если возможно несколько правильных порядков — запиши ВСЕ варианты в correct_answer через ' / '\n"
-    "  Пример: наречие времени (wczoraj, jutro, dziś, zawsze, często) можно ставить в начало или конец;\n"
-    "  тогда correct_answer = \"Wczoraj czytałem tę książkę. / Czytałem tę książkę wczoraj.\"\n"
-    "- hint: грамматическое правило, не называй конкретных слов из ответа; НЕ пиши что-то одно про порядок если порядков несколько\n"
-    "- word_hints: польские слова → {native_language}\n\n"
-    "Ответь ТОЛЬКО валидным JSON массивом без markdown:\n"
+    "Generate {count} exercises. Types: translate, order_words. Mix evenly.\n"
+    "(Do NOT generate idioms here — they have a dedicated prompt.)\n\n"
+    "TRANSLATE — phrase translation:\n"
+    "- question: a short phrase in {native_language}, ≤8 words\n"
+    "- correct_answer: the Polish translation\n"
+    "- If gender matters — state it in the question, e.g. \"I went (a woman speaking)\" phrased in {native_language}\n"
+    '- Only living, natural phrases in {native_language} — NO calques from other languages ("it costs an arm and a leg" translated literally — forbidden)\n'
+    '- FORBIDDEN meta-tasks ("translate idiom X word by word") — only real phrases\n'
+    "- word_hints: words of the {native_language} phrase → their Polish equivalents\n\n"
+    "ORDER_WORDS — arrange the words:\n"
+    '- question: the words of correct_answer joined with " / " — EXACTLY the same words in the same forms\n'
+    "- NO extra words — the system checks the exact multiset\n"
+    "- If several orders are correct — list ALL variants in correct_answer separated by ' / '\n"
+    "  Example: a time adverb (wczoraj, jutro, dziś, zawsze, często) can go first or last;\n"
+    "  then correct_answer = \"Wczoraj czytałem tę książkę. / Czytałem tę książkę wczoraj.\"\n"
+    "- hint: the grammar rule, without naming words from the answer; do NOT claim a single order when several are valid\n"
+    "- word_hints: Polish words → {native_language}\n\n"
+    "Answer ONLY with a valid JSON array, no markdown. Example question/hint/word_hints values are shown "
+    "in English — you MUST write them in {native_language}:\n"
     "[\n"
-    '  {{"type": "translate", "question": "Я уже иду домой.", "correct_answer": "Już idę do domu.", "options": null, "hint": null, "explanation": "już = уже, idę = иду", "translation": null, "word_hints": {{"уже": "już", "иду": "idę", "домой": "do domu"}}}},\n'
-    '  {{"type": "order_words", "question": "tę / wczoraj / czytałem / książkę", "correct_answer": "Wczoraj czytałem tę książkę. / Czytałem tę książkę wczoraj.", "options": null, "hint": "Порядок слов в польском гибкий — наречие времени может стоять в начале или конце", "explanation": null, "translation": null, "word_hints": {{"wczoraj": "вчера", "czytałem": "читал", "tę": "эту", "książkę": "книгу"}}}}\n'
+    '  {{"type": "translate", "question": "I am already going home.", "correct_answer": "Już idę do domu.", "options": null, "hint": null, "explanation": "już = already, idę = I am going", "translation": null, "word_hints": {{"already": "już", "going": "idę", "home": "do domu"}}}},\n'
+    '  {{"type": "order_words", "question": "tę / wczoraj / czytałem / książkę", "correct_answer": "Wczoraj czytałem tę książkę. / Czytałem tę książkę wczoraj.", "options": null, "hint": "Polish word order is flexible — a time adverb can open or close the sentence", "explanation": null, "translation": null, "word_hints": {{"wczoraj": "yesterday", "czytałem": "I read (past)", "tę": "this", "książkę": "book"}}}}\n'
     "]"
 )
 
 WORD_DEFINITION_PROMPT = (
-    "Ты генератор упражнений по польскому языку.\n"
-    "Уровень: {level}. Родной язык пользователя: {native_language}.\n\n"
+    "You generate Polish language exercises.\n"
+    "Level: {level}. User's native language: {native_language}.\n\n"
     + _EXERCISE_COMMON_RULES + "\n\n"
-    "Сгенерируй {count} упражнений типа word_definition — загадки-описания.\n"
-    "Пользователь читает описание слова по-польски и пишет отгадку (польское слово).\n\n"
-    "ПРАВИЛА:\n"
-    "- type: всегда \"word_definition\"\n"
-    "- question: описание слова по-польски, 1-2 предложения. Живой естественный польский язык.\n"
-    "  ЗАПРЕЩЕНО: использовать само слово, однокоренные или производные слова в описании.\n"
-    "  НАРУШЕНИЕ: answer=apteka, question содержит 'aptekarz' — корень 'aptek' выдаёт ответ.\n"
-    "  НАРУШЕНИЕ: answer=pływać, question содержит 'pływak' или 'pływalnia'.\n"
-    "  Представь правила игры Alias — описывай через смысл, функцию, категорию, без родственных слов.\n"
-    "  ЗАПРЕЩЕНО: ставить ___ в question — это не fill_blank\n"
-    "  ФАКТИЧЕСКАЯ ТОЧНОСТЬ: каждое утверждение в описании должно быть ПРАВДОЙ об ответе и\n"
-    "  ОДНОЗНАЧНО указывать на него. НАРУШЕНИЕ: answer=cytryna (лимон), описание «owoc czerwony lub\n"
-    "  zielony» — лимон жёлтый, описание ложно и подходит к другим фруктам. Проверь каждый признак:\n"
-    "  цвет, вкус, размер, где встречается — всё должно соответствовать именно этому слову.\n"
-    "  Описание должно отсекать похожие слова (не «фрукт кислый» — это и лимон, и лайм, и грейпфрут).\n"
-    "- correct_answer: ОДНО польское слово в словарной форме (существительное в им.п., глагол в инфинитиве).\n"
-    "  СТРОГО одно слово — без пробелов, без подчёркиваний. Возвратные глаголы НЕ годятся (mycie się) — бери невозвратное слово.\n"
-    "- hint: первая буква + категория слова, НЕ само слово (например: \"K... — coś do picia\")\n"
-    "  Подсказка тоже по-польски\n"
-    "- translation: перевод correct_answer на {native_language} — показывается после ответа\n"
-    "- explanation: почему описание подходит, на {native_language} (необязательно)\n"
+    "Generate {count} word_definition exercises — riddle descriptions.\n"
+    "The user reads a description of a word in Polish and types the answer (a Polish word).\n\n"
+    "RULES:\n"
+    "- type: always \"word_definition\"\n"
+    "- question: a description of the word in Polish, 1-2 sentences. Natural, living Polish.\n"
+    "  FORBIDDEN: using the word itself, same-root or derived words in the description.\n"
+    "  VIOLATION: answer=apteka, question contains 'aptekarz' — the root 'aptek' gives the answer away.\n"
+    "  VIOLATION: answer=pływać, question contains 'pływak' or 'pływalnia'.\n"
+    "  Think of the game Alias — describe through meaning, function, category, with no related words.\n"
+    "  FORBIDDEN: putting ___ in question — this is not fill_blank\n"
+    "  FACTUAL ACCURACY: every claim in the description must be TRUE of the answer and point\n"
+    "  to it UNAMBIGUOUSLY. VIOLATION: answer=cytryna (lemon), description «owoc czerwony lub\n"
+    "  zielony» — a lemon is yellow; the description is false and fits other fruits. Check every attribute:\n"
+    "  colour, taste, size, where it occurs — everything must match this exact word.\n"
+    "  The description must rule out similar words (not «a sour fruit» — that fits lemon, lime and grapefruit).\n"
+    "- correct_answer: ONE Polish word in dictionary form (noun in nom., verb in infinitive).\n"
+    "  STRICTLY one word — no spaces, no underscores. Reflexive verbs do NOT qualify (mycie się) — pick a non-reflexive word.\n"
+    "- hint: first letter + word category, NOT the word itself (e.g. \"K... — napój\")\n"
+    "  The hint is in Polish too\n"
+    "- translation: translation of correct_answer into {native_language} — shown after the answer\n"
+    "- explanation: why the description fits, in {native_language} (optional)\n"
     "- options: null\n"
-    "- word_hints: ПЕРЕВЕДИ ВСЕ значимые польские слова описания → {native_language} "
-    "(существительные, глаголы, прилагательные — кроме совсем служебных). Пользователь должен "
-    "понять загадку, поэтому хинтов должно быть много (обычно 5-10), не 1-2\n\n"
+    "- word_hints: TRANSLATE ALL meaningful Polish words of the description → {native_language} "
+    "(nouns, verbs, adjectives — all but pure function words). The user must be able to "
+    "understand the riddle, so there should be many hints (usually 5-10), not 1-2\n\n"
     "{candidate_words}"
-    "Выбирай конкретные слова которые легко описать — предметы, животные, еда, действия.\n"
-    "Избегай абстрактных понятий (miłość, wolność) — их сложно описать однозначно.\n"
-    "ПООЩРЯЙ ёмкие слова, которые одним словом называют целое понятие (одно польское слово = "
-    "то, что в русском описывается несколькими словами): такие слова интереснее банальных kot/kawa. "
-    "Каждый раз выбирай РАЗНЫЕ слова — не повторяй одни и те же загадки из сессии в сессию.\n"
-    "Уровень описания должен соответствовать {level} пользователя.\n\n"
-    "Ответь ТОЛЬКО валидным JSON массивом без markdown:\n"
+    "Pick concrete words that are easy to describe — objects, animals, food, actions.\n"
+    "Avoid abstract concepts (miłość, wolność) — they are hard to describe unambiguously.\n"
+    "PREFER dense words that name a whole concept in one word (one Polish word = "
+    "something that takes several words to say in the user's language): such words are more interesting than trivial kot/kawa. "
+    "Pick DIFFERENT words every time — do not repeat the same riddles from session to session.\n"
+    "The description's difficulty must match the user's level {level}.\n\n"
+    "Answer ONLY with a valid JSON array, no markdown. Example explanation/translation/word_hints values are "
+    "shown in English — you MUST write them in {native_language}:\n"
     "[\n"
-    '  {{"type": "word_definition", "question": "To jest napój, który pijemy rano. Może być czarna lub z mlekiem i cukrem.", "correct_answer": "kawa", "options": null, "hint": "K... — napój", "explanation": "Кофе — один из самых популярных напитков в Польше", "translation": "кофе", "word_hints": {{"napój": "напиток", "rano": "утром", "mlekiem": "молоком", "cukrem": "сахаром"}}}},\n'
-    '  {{"type": "word_definition", "question": "To zwierzę domowe, które miauczy i lubi spać na kanapie.", "correct_answer": "kot", "options": null, "hint": "K... — zwierzę domowe", "explanation": null, "translation": "кот / кошка", "word_hints": {{"zwierzę": "животное", "miauczy": "мяукает", "kanapie": "диване"}}}}\n'
+    '  {{"type": "word_definition", "question": "To jest napój, który pijemy rano. Może być czarna lub z mlekiem i cukrem.", "correct_answer": "kawa", "options": null, "hint": "K... — napój", "explanation": "Coffee — one of the most popular drinks in Poland", "translation": "coffee", "word_hints": {{"napój": "drink", "rano": "in the morning", "mlekiem": "milk (instr.)", "cukrem": "sugar (instr.)"}}}},\n'
+    '  {{"type": "word_definition", "question": "To zwierzę domowe, które miauczy i lubi spać na kanapie.", "correct_answer": "kot", "options": null, "hint": "K... — zwierzę domowe", "explanation": null, "translation": "cat", "word_hints": {{"zwierzę": "animal", "miauczy": "meows", "kanapie": "couch (loc.)"}}}}\n'
     "]"
 )
 
 LETTER_TILES_PROMPT = (
-    "Ты генератор упражнений по польскому языку.\n"
-    "Уровень: {level}. Родной язык: {native_language}.\n"
-    "Тематики для примеров: {interest_themes}\n\n"
+    "You generate Polish language exercises.\n"
+    "Level: {level}. User's native language: {native_language}.\n"
+    "Themes for examples: {interest_themes}\n\n"
     + _EXERCISE_COMMON_RULES + "\n\n"
-    "Сгенерируй {count} упражнений типа letter_tiles.\n"
-    "Пользователь складывает слово из перемешанных букв-карточек. Два допустимых формата — миксуй оба:\n\n"
-    "ФОРМАТ A — слово в контексте предложения:\n"
-    "- question: польское предложение с ОДНИМ ___ (пропуском)\n"
-    "- correct_answer: одно польское слово — правильная форма для этого контекста\n"
-    "- Ответ НЕ присутствует в question ни в какой форме\n"
-    "- hint: грамматическая категория без самого ответа (напр. \"biernik od herbata\")\n"
-    "- translation: полное предложение на {native_language} с самим словом вместо ___ (не спойлер — буквы уже видны)\n"
-    "- word_hints: ОБЯЗАТЕЛЬНО — каждое значимое польское слово предложения (кроме ответа) → {native_language}.\n"
-    "  Задание формата A без word_hints будет ОТБРОШЕНО валидатором — пользователь не поймёт предложение.\n\n"
-    "ФОРМАТ B — чистое написание слова (spelling):\n"
-    "- question: 'Напиши по-польски: [слово на {native_language}]' — БЕЗ ___\n"
-    "- correct_answer: польское слово\n"
-    "- Используй для слов с нетривиальным написанием: szczęście, marchewka, grzeczny, czekolada\n"
-    "- hint: первая буква + краткая категория (напр. 'sz... — сладкое'\n"
+    "Generate {count} letter_tiles exercises.\n"
+    "The user assembles a word from shuffled letter tiles. Two valid formats — mix both:\n\n"
+    "FORMAT A — a word in sentence context:\n"
+    "- question: a Polish sentence with ONE ___ (blank)\n"
+    "- correct_answer: one Polish word — the correct form for this context\n"
+    "- The answer is NOT present in question in any form\n"
+    "- hint: grammatical category without the answer itself (e.g. \"biernik od herbata\")\n"
+    "- translation: the full sentence in {native_language} with the word itself in place of ___ (not a spoiler — the letters are already visible)\n"
+    "- word_hints: MANDATORY — every meaningful Polish word of the sentence (except the answer) → {native_language}.\n"
+    "  A format-A item without word_hints will be DISCARDED by the validator — the user cannot understand the sentence.\n\n"
+    "FORMAT B — pure spelling:\n"
+    "- question: an instruction meaning 'Write in Polish: [word in {native_language}]' — the instruction itself is written in {native_language}, WITHOUT ___\n"
+    "- correct_answer: the Polish word\n"
+    "- Use for words with non-trivial spelling: szczęście, marchewka, grzeczny, czekolada\n"
+    "- hint: first letter + short category (e.g. 'sz... — something sweet', phrased in {native_language})\n"
     "- translation: null\n"
     "- word_hints: null\n\n"
-    "ОБЩИЕ ПРАВИЛА:\n"
-    "- correct_answer: ОДНО слово без пробелов\n"
-    "- ЗАПРЕЩЁН мужской неодушевлённый biernik (telefon, dom — форма не меняется → тривиально)\n"
-    "- Предпочитай слова с диакритиками: ą ę ó ś ć ź ż ń ł\n"
-    "- explanation: на {native_language} — почему эта форма или написание\n\n"
-    "Ответь ТОЛЬКО валидным JSON массивом без markdown:\n"
+    "GENERAL RULES:\n"
+    "- correct_answer: ONE word, no spaces\n"
+    "- FORBIDDEN: masculine inanimate biernik (telefon, dom — form unchanged → trivial)\n"
+    "- Prefer words with diacritics: ą ę ó ś ć ź ż ń ł\n"
+    "- explanation: in {native_language} — why this form or spelling\n\n"
+    "Answer ONLY with a valid JSON array, no markdown. Example translation/explanation/word_hints/question-instruction "
+    "values are shown in English — you MUST write them in {native_language}:\n"
     "[\n"
-    '  {{"type": "letter_tiles", "question": "Lubię pić ___ rano.", "correct_answer": "kawę", "options": null, "hint": "biernik od kawa", "explanation": "После lubię pić — biernik: kawa → kawę", "translation": "Я люблю пить кофе утром.", "word_hints": {{"lubię": "люблю", "pić": "пить", "rano": "утром"}}}},\n'
-    '  {{"type": "letter_tiles", "question": "Напиши по-польски: счастье", "correct_answer": "szczęście", "options": null, "hint": "sz... — чувство", "explanation": "szczęście — одно из самых сложных слов по написанию: sz+cz+ę", "translation": null, "word_hints": null}}\n'
+    '  {{"type": "letter_tiles", "question": "Lubię pić ___ rano.", "correct_answer": "kawę", "options": null, "hint": "biernik od kawa", "explanation": "After lubię pić — biernik: kawa → kawę", "translation": "I like drinking coffee in the morning.", "word_hints": {{"lubię": "I like", "pić": "to drink", "rano": "in the morning"}}}},\n'
+    '  {{"type": "letter_tiles", "question": "Write in Polish: happiness", "correct_answer": "szczęście", "options": null, "hint": "sz... — a feeling", "explanation": "szczęście — one of the hardest words to spell: sz+cz+ę", "translation": null, "word_hints": null}}\n'
     "]"
 )
 
 TOPIC_EXAMPLE_PROMPT = """
-Ты преподаватель польского языка. Уровень пользователя: {level}. Родной язык: {native_language}.
-Тема: {topic_title}.
+You are a Polish teacher. User level: {level}. User's native language: {native_language}.
+Topic: {topic_title}.
 
-Дай ещё один живой пример по этой теме — предложение или диалог с переводом.
-Пример должен быть новым, не повторять предыдущие.
-Формат: markdown, кратко.
+Give one more living example on this topic — a sentence or a dialogue with a translation into {native_language}.
+The example must be new, not a repeat of previous ones.
+Format: markdown, brief.
 """
 
 TOPIC_EXERCISES_PROMPT = """
-Ты генератор упражнений по польскому языку.
-Тема: {topic_title}. Уровень: {level}. Язык объяснений: {native_language}.
+You generate Polish language exercises.
+Topic: {topic_title}. Level: {level}. Language of explanations: {native_language}.
 
-Сгенерируй ровно {count} упражнений ТОЛЬКО по этой теме.
-Используй ТОЛЬКО типы: "multiple_choice" и "fill_blank". Примерно пополам каждого.
+Generate exactly {count} exercises ONLY on this topic.
+Use ONLY the types "multiple_choice" and "fill_blank", roughly half each.
 
-Правила:
-- multiple_choice: всегда ровно 4 варианта в "options", "correct_answer" = один из вариантов дословно. Если вопрос о значении слова/фразы — варианты и correct_answer на {native_language}. Поле "explanation" ВСЕГДА на {native_language}.
-- fill_blank: в "question" ОБЯЗАТЕЛЬНО поставь ___ на месте пропуска. Слово-ответ НЕ должно быть в тексте вопроса ни в каком виде (не в скобках, не рядом). Подсказку — только в поле "hint".
-- РАЗНООБРАЗИЕ ОБЯЗАТЕЛЬНО: каждое упражнение должно тестировать другую конструкцию, слово или правило — не повторяй одно и то же слово/форму дважды в рамках одного набора. Если тема охватывает несколько конструкций (например, разные вопросительные слова или разные падежи), распредели упражнения так, чтобы каждая конструкция встретилась хотя бы раз.
+Rules:
+- multiple_choice: always exactly 4 options in "options"; "correct_answer" equals one option verbatim. If the question is about the meaning of a word/phrase — options and correct_answer in {native_language}. The "explanation" field is ALWAYS in {native_language}.
+- fill_blank: "question" MUST contain ___ at the gap. The answer word must NOT appear in the question text in any form (not in parentheses, not nearby). Hints go only into the "hint" field.
+- VARIETY IS MANDATORY: each exercise must test a different construction, word or rule — never repeat the same word/form twice within one set. If the topic spans several constructions (e.g. different question words or different cases), spread the exercises so each construction appears at least once.
 
-Ответь ТОЛЬКО валидным JSON-массивом без markdown:
+Answer ONLY with a valid JSON array, no markdown:
 [
   {{
     "type": "multiple_choice",
-    "question": "вопрос на {native_language} или польское предложение",
-    "options": ["вариант1", "вариант2", "вариант3", "вариант4"],
-    "correct_answer": "вариант1",
-    "explanation": "краткое объяснение на {native_language}"
+    "question": "a question in {native_language} or a Polish sentence",
+    "options": ["option1", "option2", "option3", "option4"],
+    "correct_answer": "option1",
+    "explanation": "short explanation in {native_language}"
   }},
   {{
     "type": "fill_blank",
     "question": "Wczoraj ja ___ (iść) do sklepu.",
     "correct_answer": "szłam",
-    "hint": "подсказка на {native_language}",
-    "explanation": "объяснение на {native_language}"
+    "hint": "hint in {native_language}",
+    "explanation": "explanation in {native_language}"
   }}
 ]
 """
 
 READING_TEXT_PROMPT = """
-Сгенерируй текст на польском языке для упражнения на чтение (B1 уровень).
-Объём: 200-300 слов. Тема: {topic}.
-Стиль: современный, живой, интересный.
+Generate a Polish text for a reading exercise (level B1).
+Length: 200-300 words. Topic: {topic}.
+Style: modern, lively, interesting.
 
-После текста сгенерируй 5 вопросов с выбором ответа (по 4 варианта).
+After the text, generate 5 multiple-choice questions (4 options each).
 
-Ответь ТОЛЬКО валидным JSON без markdown:
+Answer ONLY with valid JSON, no markdown:
 {{
-  "text": "текст на польском",
+  "text": "the Polish text",
   "questions": [
     {{
-      "question": "вопрос",
-      "options": ["A) вариант1", "B) вариант2", "C) вариант3", "D) вариант4"],
-      "correct": "A) вариант1",
-      "explanation": "объяснение на {native_language}"
+      "question": "the question",
+      "options": ["A) option1", "B) option2", "C) option3", "D) option4"],
+      "correct": "A) option1",
+      "explanation": "explanation in {native_language}"
     }}
   ]
 }}
 """
 
 READING_PROMPT = (
-    "Ты составляешь упражнение на ЧТЕНИЕ С ПОНИМАНИЕМ по польскому языку.\n"
-    "Уровень читателя: {level}. Родной язык: {native_language}.\n"
-    "Тематики на выбор (возьми одну, живую): {interest_themes}\n\n"
-    "Сгенерируй ОДИН связный польский текст и вопросы на понимание.\n\n"
-    "ТЕКСТ:\n"
-    "- 4-7 предложений, естественный живой польский, СТРОГО уровня {level} (не сложнее)\n"
-    "- жанр: короткая история, заметка, письмо или диалог — что-то осмысленное\n"
-    "- НЕ список фактов, а связный текст\n\n"
-    "ВОПРОСЫ (ровно 3):\n"
-    "- на понимание содержания, по-польски; ответ ОДНОЗНАЧНО следует из текста\n"
-    "- каждый: 4 варианта, ровно один верный\n"
-    "- options — ПОЛНЫЙ текст ответа БЕЗ букв-меток (НЕ 'A.', 'B)')\n"
-    "- correct_answer — ДОСЛОВНО полный текст верного варианта (НЕ буква 'B')\n"
-    "- варьируй: факт, деталь, смысл/вывод\n\n"
-    "Также верни:\n"
-    "- translation: перевод ВСЕГО текста на {native_language}\n"
-    "- word_hints: 5-8 ключевых польских слов текста → {native_language}\n\n"
-    "Ответь ТОЛЬКО валидным JSON-объектом без markdown:\n"
+    "You are building a READING COMPREHENSION exercise for Polish.\n"
+    "Reader level: {level}. Reader's native language: {native_language}.\n"
+    "Themes to choose from (pick one, a lively one): {interest_themes}\n\n"
+    "Generate ONE coherent Polish text and comprehension questions.\n\n"
+    "TEXT:\n"
+    "- 4-7 sentences, natural living Polish, STRICTLY at level {level} (no harder)\n"
+    "- genre: a short story, a note, a letter or a dialogue — something meaningful\n"
+    "- NOT a list of facts but a coherent text\n\n"
+    "QUESTIONS (exactly 3):\n"
+    "- about the content, in Polish; the answer follows UNAMBIGUOUSLY from the text\n"
+    "- each: 4 options, exactly one correct\n"
+    "- options — the FULL answer text WITHOUT letter labels (NOT 'A.', 'B)')\n"
+    "- correct_answer — VERBATIM the full text of the correct option (NOT the letter 'B')\n"
+    "- vary: a fact, a detail, meaning/inference\n\n"
+    "Also return:\n"
+    "- translation: translation of the WHOLE text into {native_language}\n"
+    "- word_hints: 5-8 key Polish words of the text → {native_language}\n\n"
+    "Answer ONLY with a valid JSON object, no markdown. The explanation values are shown in English — "
+    "write them in {native_language}:\n"
     "{{\n"
     '  "type": "reading",\n'
-    '  "title": "короткий заголовок по-польски",\n'
-    '  "text": "Польский текст из 4-7 предложений.",\n'
-    '  "translation": "Полный перевод текста.",\n'
-    '  "word_hints": {{"slowo": "перевод"}},\n'
+    '  "title": "a short title in Polish",\n'
+    '  "text": "A Polish text of 4-7 sentences.",\n'
+    '  "translation": "The full translation of the text.",\n'
+    '  "word_hints": {{"slowo": "translation"}},\n'
     '  "questions": [\n'
-    '    {{"question": "Gdzie mieszka babcia?", "options": ["W dużym mieście", "W małym domu na wsi", "Nad morzem", "W górach"], "correct_answer": "W małym domu na wsi", "explanation": "В тексте сказано, что бабушка живёт в деревне."}}\n'
+    '    {{"question": "Gdzie mieszka babcia?", "options": ["W dużym mieście", "W małym domu na wsi", "Nad morzem", "W górach"], "correct_answer": "W małym domu na wsi", "explanation": "The text says the grandmother lives in the countryside."}}\n'
     "  ]\n"
     "}}"
 )
 
 WORD_DEFINITION_VERIFY_PROMPT = (
-    "Ты строгий редактор загадок-описаний для изучения польского.\n"
-    "Тебе дают список: описание слова (по-польски) и предполагаемый ответ.\n"
-    "Для КАЖДОГО реши, годится ли загадка:\n"
-    "- verdict \"ok\" — ВСЕ признаки в описании фактически ВЕРНЫ для ответа И описание однозначно "
-    "указывает именно на него (не подходит к другому распространённому слову).\n"
-    "- verdict \"bad\" — есть фактическая ошибка (напр. 'jabłko ... bardzo kwaśny' — яблоко обычно "
-    "сладкое, не кислое) ИЛИ описание неоднозначно (подходит и к marchew, и к pietruszka, и к dynia).\n"
-    "Сомневаешься — \"bad\".\n\n"
-    "Дан JSON-массив {{id, description, answer}}.\n"
-    "Ответь ТОЛЬКО валидным JSON-массивом того же размера: "
-    '[{{"id": <id>, "verdict": "ok"|"bad"}}], без markdown.\n\n'
-    "Загадки:\n{items}"
+    "You are a strict editor of word-riddles for Polish learners.\n"
+    "You get a list of: a word description (in Polish) and the intended answer.\n"
+    "For EACH one decide whether the riddle is sound:\n"
+    "- verdict \"ok\" — ALL attributes in the description are factually TRUE of the answer AND the description "
+    "points unambiguously to it (does not fit another common word).\n"
+    "- verdict \"bad\" — there is a factual error (e.g. 'jabłko ... bardzo kwaśny' — an apple is usually "
+    "sweet, not sour) OR the description is ambiguous (fits marchew, pietruszka and dynia alike).\n"
+    "When in doubt — \"bad\".\n\n"
+    "You get a JSON array of {{id, description, answer}}.\n"
+    "Answer ONLY with a valid JSON array of the same size: "
+    '[{{"id": <id>, "verdict": "ok"|"bad"}}], no markdown.\n\n'
+    "Riddles:\n{items}"
 )
 
 VOCAB_GENERATION_PROMPT = """
-Ты генератор словарного запаса для изучающих польский язык.
-Текущий уровень пользователя: {level}. Родной язык: {native_language}.
+You generate vocabulary for Polish learners.
+Current user level: {level}. User's native language: {native_language}.
 
-Сгенерируй {count} польских слов/выражений. Цель — РАСШИРЯТЬ словарь и ПОДТЯГИВАТЬ вверх:
-давай слова уровня {level} И на 1-2 ступени выше (максимум до B2, НЕ выше).
-В поле "level" укажи РЕАЛЬНЫЙ уровень каждого слова (например A2, B1, B2).
+Generate {count} Polish words/expressions. The goal is to EXPAND vocabulary and PULL the user UP:
+give words of level {level} AND 1-2 steps above (up to B2 max, NOT higher).
+In the "level" field state the REAL level of each word (e.g. A2, B1, B2).
 
-ВАРИАТИВНОСТЬ ОБЯЗАТЕЛЬНА — не только базовые существительные про еду/дом:
-- разные части речи: глаголы, прилагательные, НАРЕЧИЯ, союзы и связки (jednak, mimo to, dlatego, chociaż), предлоги
-- живые коллокации и устойчивые выражения (zwracać uwagę, mieć ochotę, dać radę)
-- менее банальные, «интересные» слова, а не школьный минимум
-Чередуй темы: эмоции и характер, работа и учёба, культура, технологии, природа, отношения, абстрактные понятия, быт.
+VARIETY IS MANDATORY — not just basic nouns about food/home:
+- different parts of speech: verbs, adjectives, ADVERBS, conjunctions and connectors (jednak, mimo to, dlatego, chociaż), prepositions
+- living collocations and fixed expressions (zwracać uwagę, mieć ochotę, dać radę)
+- less trivial, "interesting" words rather than the school minimum
+Rotate domains: emotions and character, work and study, culture, technology, nature, relationships, abstract concepts, daily life.
 
-СТРОГО не повторяй (уже есть в словаре): {avoid_words}
+STRICTLY do not repeat (already in the dictionary): {avoid_words}
 
-Ответь ТОЛЬКО валидным JSON массивом без markdown:
+Answer ONLY with a valid JSON array, no markdown:
 [
   {{"polish": "...", "translation_ru": "...", "translation_en": "...", "example_sentence": "...", "level": "B1"}}
 ]
 
-Требования:
-- Реальные слова (не выдуманные), проверь правописание; пример 5-10 слов по-польски
-- "polish": ОДНО слово в словарной форме (сущ. — им.п. ед.ч., глагол — инфинитив, прил. — муж.р.) ИЛИ одна устойчивая фраза. Без вариантов через /
-- "translation_ru": точный перевод; несколько равнозначных — через ' / '; не смешивай разные значения многозначного слова
+Requirements:
+- Real words (not invented), verify the spelling; example_sentence 5-10 Polish words
+- "polish": ONE word in dictionary form (noun — nom. sg., verb — infinitive, adj. — masc.) OR one fixed phrase. No variants with /
+- "translation_ru": precise RUSSIAN translation; several equal variants — separated by ' / '; do not mix different senses of a polysemous word
+- "translation_en": precise ENGLISH translation, same rules. BOTH translation fields are always required regardless of the user's native language (the dictionary is shared between users)
 """
 
 GRAMMAR_EXAM_PROMPT = """
-Сгенерируй 20 вопросов по грамматике польского языка уровня B1.
-Охвати все типы: падежи, виды глаголов, времена, условное наклонение.
+Generate 20 Polish grammar questions at level B1.
+Cover all areas: cases, verb aspects, tenses, the conditional.
+The "explanation" field is written in {native_language}.
 
-Ответь ТОЛЬКО валидным JSON массивом без markdown:
+Answer ONLY with a valid JSON array, no markdown:
 [
   {{
     "question": "Mam ___ (brat)",
     "options": ["brat", "brata", "bracie", "bratem"],
     "correct_answer": "brata",
-    "explanation": "После mam нужен бiernik мужского рода одушевлённого: brat → brata"
+    "explanation": "After mam — biernik of an animate masculine noun: brat → brata"
   }}
 ]
 """
 
-# Выделенный промт для идиом-flashcard. Топик-FREE: Мистраль берёт РЕАЛЬНЫЕ идиомы из своих
-# знаний, его НЕ заставляют придумывать идиому под грамматическую тему (это и порождало мусор).
+# Dedicated prompt for idiom flashcards. Topic-FREE: Mistral draws REAL idioms from its
+# own knowledge and is never forced to invent an idiom to fit a grammar topic (that
+# produced fabricated garbage).
 IDIOM_FLASHCARD_PROMPT = (
-    "Ты эксперт по польской фразеологии.\n"
-    "Уровень пользователя: {level}. Родной язык: {native_language}.\n\n"
-    "Сгенерируй {count} карточек с РЕАЛЬНЫМИ польскими идиомами и устойчивыми выражениями.\n\n"
-    "ЖЁСТКИЕ ПРАВИЛА:\n"
-    "- ТОЛЬКО реально существующие, употребимые в живой речи польские идиомы/фразеологизмы/поговорки.\n"
-    "  Если не уверен на 100%, что фраза реально существует — НЕ включай её. Лучше меньше, но настоящие.\n"
-    "- НЕ выдумывай правдоподобно звучащие фразы. Примеры выдуманного мусора (НЕ делать): "
+    "You are an expert in Polish phraseology.\n"
+    "User level: {level}. User's native language: {native_language}.\n\n"
+    "Generate {count} flashcards with REAL Polish idioms and fixed expressions.\n\n"
+    "HARD RULES:\n"
+    "- ONLY idioms/phrasemes/sayings that really exist and are used in living Polish speech.\n"
+    "  If you are not 100% sure the phrase exists — do NOT include it. Fewer but real.\n"
+    "- Do NOT invent plausible-sounding phrases. Examples of invented garbage (do NOT do this): "
     "'pazur w kieszeni', 'zielony kot na dachu'.\n"
-    "- Каждая идиома ОБЯЗАТЕЛЬНО содержит глагол (mieć, robić, wziąć, być, lać, rzucać, trzymać и т.п.).\n"
-    "  ЗАПРЕЩЕНО: одиночные слова, прилагательное+существительное без глагола (zielone drzewo), просто словосочетания.\n"
-    "- Разнообразие: разные идиомы каждый раз, разные глаголы и темы (эмоции, работа, отношения, деньги, время).\n"
-    "- Сложность под уровень {level}: для A0-A1 — самые частотные бытовые идиомы; выше — можно реже встречающиеся.\n\n"
-    "ПОЛЯ каждой карточки:\n"
-    "- type: всегда \"flashcard\"\n"
-    "- question: сама польская идиома целиком (без ___, без пропусков)\n"
-    "- correct_answer: СМЫСЛОВОЙ перевод на {native_language} (что это значит), НЕ дословный\n"
-    "- translation: дословный перевод (букв. \"...\") — чтобы видна была игра слов\n"
-    "- explanation: краткое пояснение на {native_language} — когда и как употребляется (1 предложение)\n"
+    "- Every idiom MUST contain a verb (mieć, robić, wziąć, być, lać, rzucać, trzymać etc.).\n"
+    "  FORBIDDEN: single words, adjective+noun without a verb (zielone drzewo), plain word combinations.\n"
+    "- Variety: different idioms every time, different verbs and domains (emotions, work, relationships, money, time).\n"
+    "- Difficulty matched to level {level}: for A0-A1 — the most frequent everyday idioms; higher — rarer ones allowed.\n\n"
+    "FIELDS of each card:\n"
+    "- type: always \"flashcard\"\n"
+    "- question: the Polish idiom itself, whole (no ___, no gaps)\n"
+    "- correct_answer: the MEANING translated into {native_language} (what it means), NOT literal\n"
+    "- translation: the literal translation into {native_language} (marked as literal) — so the wordplay is visible\n"
+    "- explanation: short note in {native_language} — when and how it is used (1 sentence)\n"
     "- options: null, hint: null, word_hints: null\n\n"
-    "Ответь ТОЛЬКО валидным JSON массивом без markdown:\n"
+    "Answer ONLY with a valid JSON array, no markdown. Example correct_answer/translation/explanation values are "
+    "shown in English — you MUST write them in {native_language}:\n"
     "[\n"
-    '  {{"type": "flashcard", "question": "mieć muchy w nosie", "correct_answer": "быть не в духе, дуться", "options": null, "hint": null, "explanation": "О человеке, который раздражён без явной причины", "translation": "букв. \'иметь мух в носу\'", "word_hints": null}},\n'
-    '  {{"type": "flashcard", "question": "rzucać słowa na wiatr", "correct_answer": "бросать слова на ветер, не держать слово", "options": null, "hint": null, "explanation": "О том, кто обещает, но не выполняет", "translation": "букв. \'бросать слова на ветер\'", "word_hints": null}}\n'
+    '  {{"type": "flashcard", "question": "mieć muchy w nosie", "correct_answer": "to be in a bad mood, to sulk", "options": null, "hint": null, "explanation": "About a person who is irritated for no clear reason", "translation": "lit. \'to have flies in one\'s nose\'", "word_hints": null}},\n'
+    '  {{"type": "flashcard", "question": "rzucać słowa na wiatr", "correct_answer": "to make empty promises, not keep one\'s word", "options": null, "hint": null, "explanation": "About someone who promises but does not deliver", "translation": "lit. \'to throw words to the wind\'", "word_hints": null}}\n'
     "]"
 )
 
 IDIOM_DRILL_PROMPT = """
-Пользователь изучает польский язык (уровень {level}, родной язык: {native_language}).
-Он уже знает значение этих выражений (видел их как карточки):
+The user is learning Polish (level {level}, native language: {native_language}).
+They already know the meaning of these expressions (seen as flashcards):
 {expressions}
 
-Для каждого выражения создай ОДНО упражнение, которое заставит пользователя
-ВОСПРОИЗВЕСТИ ключевое слово — а не просто узнать выражение.
+For each expression create ONE exercise that forces the user to
+REPRODUCE the key word — not merely recognize the expression.
 
-ПРАВИЛА ВЫБОРА ТИПА:
-- "fill_blank" — убери ОДНО ключевое слово выражения, замени на ___.
-  Остаток выражения + контекстное предложение остаются в question.
-- "letter_tiles" — то же самое, но correct_answer строго одно слово без пробелов.
-  Предпочитай letter_tiles для слов с польскими диакритиками (ą ę ó ś ć ź ż ń ł).
+TYPE SELECTION RULES:
+- "fill_blank" — remove ONE key word of the expression, replace with ___.
+  The rest of the expression + a context sentence stay in the question.
+- "letter_tiles" — same, but correct_answer is strictly one word with no spaces.
+  Prefer letter_tiles for words with Polish diacritics (ą ę ó ś ć ź ż ń ł).
 
-СТРОГИЕ ПРАВИЛА:
-- correct_answer = одно слово, которое пользователь должен вписать/собрать.
-  Для fill_blank — может быть словосочетание (напр. «na plecach»), но лучше одно слово.
-  Для letter_tiles — ТОЛЬКО одно слово, БЕЗ пробелов.
-- Ответ НЕ должен присутствовать в question даже частично.
-- hint: короткое описание выражения на {native_language}, НЕ раскрывающее ответ.
-- explanation: что значит выражение, как используется — на {native_language}.
-- question: живое предложение с пропуском, не просто выражение с ___.
-- translation: ОБЯЗАТЕЛЬНО — перевод полного предложения на {native_language} с самим словом вместо ___.
-- word_hints: ОБЯЗАТЕЛЬНО — каждое значимое польское слово предложения (кроме ответа) → {native_language}.
-  Без word_hints задание будет ОТБРОШЕНО — пользователь не сможет понять предложение.
+STRICT RULES:
+- correct_answer = the one word the user must type/assemble.
+  For fill_blank — may be a short phrase (e.g. «na plecach»), but one word is better.
+  For letter_tiles — ONLY one word, NO spaces.
+- The answer must NOT appear in the question even partially.
+- hint: a short description of the expression in {native_language} that does NOT reveal the answer.
+- explanation: what the expression means, how it is used — in {native_language}.
+- question: a living sentence with the gap, not just the expression with ___.
+- translation: MANDATORY — the full sentence translated into {native_language} with the word itself in place of ___.
+- word_hints: MANDATORY — every meaningful Polish word of the sentence (except the answer) → {native_language}.
+  Without word_hints the item will be DISCARDED — the user cannot understand the sentence.
 
-Ответь ТОЛЬКО валидным JSON массивом (по одному объекту на каждое выражение):
+Answer ONLY with a valid JSON array (one object per expression). Example hint/explanation/translation/word_hints
+values are shown in English — you MUST write them in {native_language}:
 [
-  {{"type": "fill_blank", "question": "On zawsze ma ___ w nosie — nigdy nie jest w dobrym humorze.", "correct_answer": "muchy", "options": null, "hint": "фразеологизм «не в духе»", "explanation": "«mieć muchy w nosie» — быть раздражённым, не в настроении", "translation": "У него всегда мухи в носу — он никогда не в хорошем настроении.", "word_hints": {{"zawsze": "всегда", "nosie": "нос (в носу)", "nigdy": "никогда", "dobrym": "хорошем", "humorze": "настроении"}}}},
-  {{"type": "letter_tiles", "question": "Nie masz ___ na plecach — nie możesz wszystkiego kontrolować.", "correct_answer": "oczu", "options": null, "hint": "поговорка о невозможности видеть всё", "explanation": "«nie mieć oczu na plecach» — нельзя уследить за всем сразу", "translation": "У тебя нет глаз на спине — ты не можешь всё контролировать.", "word_hints": {{"masz": "имеешь", "plecach": "спина (на спине)", "możesz": "можешь", "wszystkiego": "всего", "kontrolować": "контролировать"}}}}
+  {{"type": "fill_blank", "question": "On zawsze ma ___ w nosie — nigdy nie jest w dobrym humorze.", "correct_answer": "muchy", "options": null, "hint": "the idiom for being in a bad mood", "explanation": "«mieć muchy w nosie» — to be irritated, out of sorts", "translation": "He always has flies in his nose — he is never in a good mood.", "word_hints": {{"zawsze": "always", "nosie": "nose (loc.)", "nigdy": "never", "dobrym": "good (loc.)", "humorze": "mood (loc.)"}}}},
+  {{"type": "letter_tiles", "question": "Nie masz ___ na plecach — nie możesz wszystkiego kontrolować.", "correct_answer": "oczu", "options": null, "hint": "the saying about not seeing everything", "explanation": "«nie mieć oczu na plecach» — you cannot keep track of everything at once", "translation": "You don't have eyes in the back of your head — you can't control everything.", "word_hints": {{"masz": "you have", "plecach": "back (loc.)", "możesz": "you can", "wszystkiego": "everything (gen.)", "kontrolować": "to control"}}}}
 ]
 """

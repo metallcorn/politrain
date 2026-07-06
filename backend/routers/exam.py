@@ -8,6 +8,7 @@ import models
 import schemas
 import prompts
 from services import mistral
+from services.i18n import lang_name
 
 router = APIRouter(prefix="/exam", tags=["exam"])
 
@@ -94,7 +95,7 @@ async def get_task(
                 system="You are a Polish language reading comprehension task generator. Respond only with valid JSON.",
                 user=prompts.READING_TEXT_PROMPT.format(
                     topic=topic,
-                    native_language=current_user.native_language,
+                    native_language=lang_name(current_user.native_language),
                 ),
                 temperature=0.7,
                 max_tokens=2000,
@@ -108,7 +109,9 @@ async def get_task(
         try:
             raw = await mistral.simple_prompt(
                 system="You are a Polish grammar test generator. Respond only with valid JSON array.",
-                user=prompts.GRAMMAR_EXAM_PROMPT,
+                user=prompts.GRAMMAR_EXAM_PROMPT.format(
+                    native_language=lang_name(current_user.native_language),
+                ),
                 temperature=0.5,
                 max_tokens=3000,
             )
@@ -142,7 +145,7 @@ async def submit_task(
                 user=prompts.WRITING_EVALUATION_PROMPT.format(
                     task_description=task_description,
                     student_text=student_text,
-                    native_language=current_user.native_language,
+                    native_language=lang_name(current_user.native_language),
                 ),
                 temperature=0.3,
                 max_tokens=800,

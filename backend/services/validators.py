@@ -25,21 +25,48 @@ def _validate_type(item: dict) -> dict | None:
     return item if item.get("type") in _VALID_EXERCISE_TYPES else None
 
 
-_CYRILLIC_RE = re.compile(r'[а-яёА-ЯЁ]')
+# Script signature per native language: when the language uses a non-Latin script, a
+# translation/explanation/hint containing NO characters of that script is in the wrong
+# language (usually English leakage from the model) and gets nulled. Latin-script native
+# languages (en, de, ...) cannot be distinguished from Polish this cheaply — check skipped.
+# Add an entry here when supporting a new non-Latin-script language.
+_NATIVE_SCRIPT_RES = {
+    "ru": re.compile(r'[а-яёА-ЯЁ]'),
+    "uk": re.compile(r'[а-щьюяєіїґА-ЩЬЮЯЄІЇҐ]'),
+    "be": re.compile(r'[а-яёўіА-ЯЁЎІ]'),
+}
+
+# Letters of the Polish alphabet — an exercise answer must be Polish, so any OTHER
+# alphabetic character (Cyrillic, Greek, German umlauts...) marks a wrong-language answer.
+_POLISH_LETTERS = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZąćęłńóśźżĄĆĘŁŃÓŚŹŻ")
+
+def _has_non_polish_letters(text: str) -> bool:
+    return any(ch.isalpha() and ch not in _POLISH_LETTERS for ch in (text or ""))
+
 
 def _sanitize_native_fields(item: dict, native_language: str) -> dict:
-    """If native_language expects Cyrillic (ru) but translation/explanation are in Latin, null them out.
-    Also nulls out any field that is a dict instead of a string (Mistral sometimes returns nested objects)."""
+    """Null out translation/explanation/hint written in the wrong language for the user
+    (detected via the native language's script — see _NATIVE_SCRIPT_RES). Also nulls out
+    any field that is a dict instead of a string (Mistral sometimes returns nested objects)."""
     for field in ("translation", "explanation", "hint"):
         val = item.get(field)
         if val is not None and not isinstance(val, str):
             item[field] = None
-    if native_language != "ru":
+    script_re = _NATIVE_SCRIPT_RES.get((native_language or "").lower())
+    if script_re is None:
         return item
     for field in ("translation", "explanation", "hint"):
         val = item.get(field)
-        if val and isinstance(val, str) and len(val) > 4 and not _CYRILLIC_RE.search(val):
+        if val and isinstance(val, str) and len(val) > 4 and not script_re.search(val):
             item[field] = None
+    # word_hints VALUES leak English too (idiom drill: 'powinieneś': 'you should') — drop
+    # wrong-script values; if nothing survives, null the dict so _require_word_hints can
+    # reject items whose hints were all garbage.
+    wh = item.get("word_hints")
+    if isinstance(wh, dict) and wh:
+        cleaned = {k: v for k, v in wh.items()
+                   if not (isinstance(v, str) and len(v) > 3 and not script_re.search(v))}
+        item["word_hints"] = cleaned or None
     return item
 
 
@@ -81,9 +108,10 @@ def _fix_flashcard_exercise(item: dict) -> dict | None:
             item["correct_answer"] = translation
             return item
         return None
-    # If correct_answer looks Polish (no Cyrillic) but translation has Cyrillic, swap
-    has_cyr = lambda s: bool(re.search(r'[а-яёА-ЯЁ]', s))
-    if not has_cyr(correct) and has_cyr(translation):
+    # If correct_answer still looks Polish while translation is clearly in another script
+    # (the user's language), swap them. For Latin-script native languages the two can't be
+    # told apart cheaply, so no swap is attempted.
+    if not _has_non_polish_letters(correct) and _has_non_polish_letters(translation):
         item["correct_answer"] = translation
     return item
 
@@ -232,9 +260,10 @@ def _fix_fill_blank_exercise(item: dict) -> dict | None:
     if _strip(correct).rstrip('.?!,;') in _PL_INTERROGATIVES:
         return None
 
-    # The answer must be Polish, not a transliteration the user can't type in a Polish
-    # keyboard, e.g. "litera Ł wymawia się jak ___" → "в" (Cyrillic). Report #222.
-    if re.search(r'[а-яёА-ЯЁ]', correct):
+    # The answer must be Polish, not a transliteration the user can't type on a Polish
+    # keyboard, e.g. "litera Ł wymawia się jak ___" → "в" (report #222). Checked against
+    # the Polish alphabet so it catches any foreign script, not just Cyrillic.
+    if _has_non_polish_letters(correct):
         return None
 
     # Numeral answer: without a digit cue any number fits (#236 'zjadłem ___ jajek' → dwa);
@@ -270,6 +299,8 @@ def _fix_fill_blank_exercise(item: dict) -> dict | None:
     answer_leaked = bool(re.search(r'\b' + re.escape(c_norm) + r'\b', q_norm))
 
     if has_blank and not answer_leaked:
+        if len(correct.split()) == 1 and _stem_leak(question, c_norm):
+            return None  # another form of the answer word printed in the question
         if not _check_modal_has_infinitive(item):
             return None  # modal verb answer but no infinitive in question — incomplete sentence
         return item  # perfect format
@@ -337,6 +368,18 @@ def _check_modal_has_infinitive(item: dict) -> bool:
     return bool(re.search(r'\w+[ćc]\b', question, re.IGNORECASE))
 
 
+def _stem_leak(question: str, correct_norm: str) -> bool:
+    """True when a word sharing the answer's stem is already printed in the question
+    OUTSIDE parentheses: 'na ___ rowerem' with answer 'rowerze' shows the target word in
+    another form. Parenthetical base forms ('Lubię ___ (herbata)') are the intended cue
+    format and are excluded."""
+    if len(correct_norm) < 4:
+        return False
+    q = re.sub(r'\([^)]*\)', ' ', question)
+    q_words = [w for w in re.findall(r'[a-z]+', _strip(q)) if len(w) >= 4]
+    return any(_stem_match(correct_norm, w) for w in q_words)
+
+
 def _fix_letter_tiles_exercise(item: dict) -> dict | None:
     """Validate letter_tiles: single-word answer, answer not visible in question.
     Two valid formats:
@@ -358,16 +401,25 @@ def _fix_letter_tiles_exercise(item: dict) -> dict | None:
     q_norm = _strip(question)
     if re.search(r'\b' + re.escape(c_norm) + r'\b', q_norm):
         return None  # answer visible in question
+    if _stem_leak(question, c_norm):
+        return None  # another form of the answer word printed in the question (rowerze/rowerem)
     return item
 
 
 def _fix_translate_exercise(item: dict) -> dict | None:
-    """Ensure translate exercises are a single short sentence (≤12 words)."""
+    """Ensure translate exercises are a single short sentence (≤12 words); speaker-gender
+    markers belong in the question, not inside the reference answer."""
     if item.get("type") != "translate":
         return item
     question = (item.get("question") or "").strip()
     if not question:
         return None
+    # Mistral sometimes appends '(mówi kobieta)' to correct_answer — the user would never
+    # type it, breaking the exact-match check. Strip it from the answer.
+    ca = item.get("correct_answer") or ""
+    ca_clean = re.sub(r'\s*\(mówi [^)]*\)', '', ca).strip()
+    if ca_clean and ca_clean != ca.strip():
+        item["correct_answer"] = ca_clean
     # Reject if multiple sentences (contains . or ! or ? in the middle)
     sentences = re.split(r'[.!?]+', question)
     sentences = [s.strip() for s in sentences if s.strip()]
@@ -534,7 +586,8 @@ def _too_similar(question_norm: str, seen_token_sets: list, threshold: float = 0
     return False
 
 
-_SKELETON_WORD_RE = re.compile(r"[a-ząęóśćźżńła-яё]+", re.IGNORECASE)
+# Any Unicode letters — translate questions are in the user's native language, whatever it is
+_SKELETON_WORD_RE = re.compile(r"[^\W\d_]+", re.IGNORECASE)
 
 def _question_skeleton(question: str, n: int = 3) -> str:
     """Fingerprint of a question's OPENING construction: the first n significant words,

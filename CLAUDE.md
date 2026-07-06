@@ -556,7 +556,12 @@ backend/
   schemas.py       — Pydantic schemas (request/response)
   auth.py          — JWT, password hashing
   database.py      — SQLAlchemy session
-  prompts.py       — ВСЕ промты для Mistral:
+  prompts.py       — ВСЕ промты для Mistral. ЯЗЫКОВАЯ ПОЛИТИКА (не нарушать): мета-язык промтов —
+                     АНГЛИЙСКИЙ; все user-facing поля — через {native_language}, куда подставляется
+                     ПОЛНОЕ имя языка через services/i18n.py lang_name() ("Russian", не "ru" — иначе
+                     Mistral отвечает по-английски); примеры в JSON: польские литералы можно,
+                     русские/др. литералы НЕЛЬЗЯ (Mistral их копирует любому юзеру) — значения
+                     нативных полей в примерах по-английски + строка "write them in {native_language}":
                      _EXERCISE_COMMON_RULES — общий блок правил (без format-переменных, конкатенируется в каждый промт)
                      GRAMMAR_EXERCISES_PROMPT — fill_blank + multiple_choice
                      LEXICAL_EXERCISES_PROMPT — translate + order_words (БЕЗ flashcard — идиомы вынесены)
@@ -642,6 +647,10 @@ backend/
                      _pool_draw(seen_norms=...) — исключает не только по pool_exercise_id, но и по question_norm против недавно виденных вопросов (иначе фраза, виденная через не-пуловое задание, всплывала как «новое» — #194/#99),
                      _generate_idiom_drill_exercises — drill из UserKnownExpression (word_hints+translation обязательны, topic_title="Идиомы"),
                      _vocab_card_content/_VOCAB_TILES_GRADUATE, _mastered_exercise_ids, _eligible_vocab_levels/_LEVEL_ORDER
+    i18n.py        — lang_name(code)→"Russian"/"English" (ОБЯЗАТЕЛЕН в каждом .format() промта с
+                     native_language) + ui(key, lang, **kw) — серверные user-facing строки
+                     (вопрос vocab-карточки, бейдж «Идиомы», chat_topics, заголовки сценариев,
+                     fallback-сообщения) с en-фолбэком; новые языки — добавлять в _LANG_NAMES/_UI
     mistral.py     — обёртка над Mistral API;
                      `_API_SEMAPHORE = asyncio.Semaphore(3)` — максимум 3 параллельных вызова (защита от rate limit при 7 батчах);
                      `_pace_request()` — глобальный интервал 1с между стартами запросов (лимит Mistral — req/sec, code 1300; семафор сам по себе не спасает от одновременного старта);
@@ -919,3 +928,9 @@ frontend/src/
 | Загадка вернулась 10-й раз (cytryna, #237) | `_seen_answers(limit=120)` — за 5 активных дней ответ выпадал из окна, а юзер помнит загадку неделями | Окно 1500 (дефолт `_seen_answers`) |
 | Шаблон-близнец проскочил skeleton-дедуп («Это подарок…» vs «Этот подарок…», #238) | Скелет сравнивал точные слова — одна буква различия = другой скелет | `_question_skeleton` стеммит каждое слово до 3 символов; окно `_seen_skeletons` в `_pool_draw` = 300 |
 | Загадки не закрепляют изученное (фидбэк #68) | word_definition выбирал произвольные слова, не связанные со словарём юзера | `_worddef_candidates_block(user_id, db)` — 6 слов из UserVocabulary (streak≥1, минус недавние ответы) → `{candidate_words}` в WORD_DEFINITION_PROMPT («половину загадок — про эти слова»); db прокинут в `_generate_exercises(db=db)` |
+| Хардкод русского в промтах/проверках — сломано для не-ru юзеров | Промты писались по-русски, валидаторы проверяли «есть кириллица?», UI-строки бэкенда захардкожены | Мета-язык промтов — английский; `lang_name()` в каждом format; `_NATIVE_SCRIPT_RES` (ru/uk/be) вместо кириллица-only; ответ = только польский алфавит (`_has_non_polish_letters` ловит любой чужой скрипт); серверные строки через `ui()` |
+| word_hints по-английски у ru-юзера (идиомный дрилл) | `_sanitize_native_fields` чистил translation/hint/explanation, но НЕ word_hints; английские примеры промта копируются | Санитайзер дропает wrong-script значения word_hints; всё выпало → word_hints=None → `_require_word_hints` бракует задание |
+| Однокоренное слово ответа в вопросе («na ___ rowerem» → rowerze) | Проверка утечки — только точное совпадение; инфлектированная форма проходила | `_stem_leak(question, c_norm)` в fill_blank (одно-словный ответ) и letter_tiles; скобочная базовая форма «(herbata)» исключена — это легитимный формат |
+| «(mówi kobieta)» внутри correct_answer у translate | Маркер пола попадал в эталон → exact-match никогда не сходился | `_fix_translate_exercise` вырезает `\(mówi …\)` из correct_answer |
+| Одна фраза дважды в одной сессии (pool + свежая генерация) | `seen_qs` = только completed; свежесгенерированный близнец только что выданного из пула проходил дедуп | Оба цикла (daily/bonus) сидируют seen_qs/skeletons/answers элементами `pool_drawn` ДО валидации генерации |
+| Пул хранит нативные поля на языке генератора | translation/word_hints в content записаны на языке юзера-генератора (сейчас ru); не-ru юзер вытянет русские подсказки | ИЗВЕСТНОЕ ОГРАНИЧЕНИЕ: перед запуском для не-ru юзеров добавить колонку native_lang в exercise_pool и фильтр в `_pool_draw`. UI-данные (ранги, day_names, exam-тексты, achievements, фронтенд) — тоже отложены до фазы i18n UI |

@@ -10,33 +10,49 @@ import models
 import schemas
 import prompts
 from services import mistral
+from services.i18n import lang_name, ui
 from services.gamification import add_xp, XP_CHAT_MESSAGE, check_achievements, update_daily_activity, update_streak
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
-CHAT_TOPICS = [
-    "Расскажи о своём дне",
-    "Опиши свой город",
-    "Что ты делал на выходных?",
-    "Поговорим о еде",
-    "Твои планы на будущее",
-    "Свободная тема",
-]
-
-# Role-play scenarios: the AI stays in `role`, opens with `opening`, corrections deferred to debrief.
+# Role-play scenarios: the AI stays in `role` (English — Mistral-facing), opens with
+# `opening` (Polish — in-scene), `title` is user-facing and per-language (en fallback).
 SCENARIOS = {
-    "cafe":       {"title": "В кафе",            "role": "официант в польском кафе",                 "opening": "Dzień dobry! Zapraszam. Co podać do picia?"},
-    "doctor":     {"title": "У врача",           "role": "врач-терапевт на приёме",                  "opening": "Dzień dobry, proszę usiąść. Co Panu/Pani dolega?"},
-    "airport":    {"title": "В аэропорту",       "role": "сотрудник стойки регистрации в аэропорту", "opening": "Dzień dobry! Poproszę paszport i bilet. Dokąd Pan/Pani leci?"},
-    "shop":       {"title": "В магазине одежды", "role": "продавец в магазине одежды",               "opening": "Dzień dobry! W czym mogę pomóc?"},
-    "hotel":      {"title": "В отеле",           "role": "администратор на ресепшене отеля",         "opening": "Dzień dobry! Witamy w hotelu. Ma Pan/Pani rezerwację?"},
-    "directions": {"title": "Спросить дорогу",   "role": "прохожий на улице польского города",       "opening": "Słucham? W czym mogę pomóc?"},
+    "cafe":       {"title": {"ru": "В кафе", "en": "At the café"},
+                   "role": "a waiter in a Polish café",
+                   "opening": "Dzień dobry! Zapraszam. Co podać do picia?"},
+    "doctor":     {"title": {"ru": "У врача", "en": "At the doctor's"},
+                   "role": "a general practitioner seeing a patient",
+                   "opening": "Dzień dobry, proszę usiąść. Co Panu/Pani dolega?"},
+    "airport":    {"title": {"ru": "В аэропорту", "en": "At the airport"},
+                   "role": "a check-in desk agent at the airport",
+                   "opening": "Dzień dobry! Poproszę paszport i bilet. Dokąd Pan/Pani leci?"},
+    "shop":       {"title": {"ru": "В магазине одежды", "en": "In a clothes shop"},
+                   "role": "a shop assistant in a clothes shop",
+                   "opening": "Dzień dobry! W czym mogę pomóc?"},
+    "hotel":      {"title": {"ru": "В отеле", "en": "At the hotel"},
+                   "role": "a receptionist at a hotel front desk",
+                   "opening": "Dzień dobry! Witamy w hotelu. Ma Pan/Pani rezerwację?"},
+    "directions": {"title": {"ru": "Спросить дорогу", "en": "Asking for directions"},
+                   "role": "a passer-by on a street in a Polish city",
+                   "opening": "Słucham? W czym mogę pomóc?"},
 }
+
+
+def _scenario_title(scenario_key: str, lang: str) -> str | None:
+    sc = SCENARIOS.get(scenario_key)
+    if not sc:
+        return None
+    titles = sc["title"]
+    return titles.get((lang or "").lower(), titles["en"])
 
 
 @router.get("/scenarios")
 def get_scenarios(current_user: models.User = Depends(get_current_user)):
-    return {"scenarios": [{"id": k, "title": v["title"]} for k, v in SCENARIOS.items()]}
+    return {"scenarios": [
+        {"id": k, "title": _scenario_title(k, current_user.native_language)}
+        for k in SCENARIOS
+    ]}
 
 
 @router.post("/session/{session_id}/debrief")
@@ -58,22 +74,23 @@ async def debrief_dialogue(
         models.ChatMessage.role == "user",
     ).order_by(models.ChatMessage.created_at).all()
     if not user_msgs:
-        return {"text": "Ты ещё ничего не написал — напиши пару реплик, и я разберу!"}
+        return {"text": ui("debrief_no_messages", current_user.native_language)}
 
-    title = SCENARIOS.get(session.scenario, {}).get("title", session.topic or "диалог")
+    title = (_scenario_title(session.scenario, current_user.native_language)
+             or session.topic or ui("dialogue_fallback_title", current_user.native_language))
     joined = "\n".join(f"- {m.content}" for m in user_msgs)
     try:
         text = await mistral.simple_prompt(
             system="You are a kind Polish language teacher. Reply in the user's native language, markdown.",
             user=prompts.DIALOGUE_DEBRIEF_PROMPT.format(
                 title=title, user_messages=joined,
-                native_language=current_user.native_language,
+                native_language=lang_name(current_user.native_language),
             ),
             temperature=0.4, max_tokens=700, timeout=40.0, retries=1,
             purpose="dialogue_debrief", user_id=current_user.id,
         )
     except Exception:
-        text = "Не удалось собрать разбор — попробуй ещё раз чуть позже."
+        text = ui("debrief_failed", current_user.native_language)
     session.ended_at = datetime.utcnow()
     db.commit()
     return {"text": text}
@@ -86,7 +103,7 @@ def create_session(
     current_user: models.User = Depends(get_current_user),
 ):
     scenario = body.scenario if body.scenario in SCENARIOS else None
-    topic = SCENARIOS[scenario]["title"] if scenario else body.topic
+    topic = _scenario_title(scenario, current_user.native_language) if scenario else body.topic
     session = models.ChatSession(user_id=current_user.id, topic=topic, scenario=scenario)
     db.add(session)
     db.commit()
@@ -184,18 +201,18 @@ async def send_message(
     weak_spots = ", ".join(
         t.title_ru if current_user.native_language == "ru" else t.title_en
         for t in weak_topics
-    ) or "нет"
+    ) or "none"
 
     if session.scenario and session.scenario in SCENARIOS:
         sc = SCENARIOS[session.scenario]
         system = prompts.CHAT_ROLEPLAY_PROMPT.format(
-            role=sc["role"], title=sc["title"],
-            level=current_user.level, native_language=current_user.native_language,
+            role=sc["role"], title=_scenario_title(session.scenario, current_user.native_language),
+            level=current_user.level, native_language=lang_name(current_user.native_language),
         )
     else:
         system = prompts.CHAT_SYSTEM_PROMPT.format(
             level=current_user.level,
-            native_language=current_user.native_language,
+            native_language=lang_name(current_user.native_language),
             weak_spots=weak_spots,
         )
 
@@ -231,4 +248,4 @@ async def send_message(
 
 @router.get("/topics")
 def get_chat_topics(current_user: models.User = Depends(get_current_user)):
-    return {"topics": CHAT_TOPICS}
+    return {"topics": ui("chat_topics", current_user.native_language)}

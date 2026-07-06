@@ -142,6 +142,29 @@ class TestSanitizeNativeFields:
         item = {"translation": "I drink coffee", "explanation": None, "hint": None}
         assert _sanitize_native_fields(item, "en")["translation"] == "I drink coffee"
 
+    def test_uk_user_english_leak_nulled(self):
+        # generic per-language script table: Ukrainian expects Cyrillic with є/і/ї
+        item = {"translation": "I drink coffee in the morning", "explanation": None, "hint": None}
+        assert _sanitize_native_fields(item, "uk")["translation"] is None
+        item2 = {"translation": "Я п'ю каву вранці", "explanation": None, "hint": None}
+        assert _sanitize_native_fields(item2, "uk")["translation"] == "Я п'ю каву вранці"
+
+    def test_unknown_language_skipped(self):
+        item = {"translation": "Ich trinke Kaffee", "explanation": None, "hint": None}
+        assert _sanitize_native_fields(item, "de")["translation"] == "Ich trinke Kaffee"
+
+    def test_english_word_hint_values_dropped_for_ru(self):
+        # idiom drill leaked 'powinieneś': 'you should' to a ru user (review 2026-07)
+        item = {"translation": None, "explanation": None, "hint": None,
+                "word_hints": {"powinieneś": "you should", "ważne": "важно"}}
+        out = _sanitize_native_fields(item, "ru")
+        assert out["word_hints"] == {"ważne": "важно"}
+
+    def test_all_english_word_hints_nulled_for_ru(self):
+        item = {"translation": None, "explanation": None, "hint": None,
+                "word_hints": {"takie": "such", "ważne": "important"}}
+        assert _sanitize_native_fields(item, "ru")["word_hints"] is None
+
 
 # ---------- word hints ----------
 
@@ -344,6 +367,12 @@ class TestFixFillBlank:
                 "correct_answer": "в"}
         assert _fix_fill_blank_exercise(item) is None
 
+    def test_any_foreign_script_answer_rejected(self):
+        # generalized: answer must be Polish-alphabet only, not just "no Cyrillic"
+        item = {"type": "fill_blank", "question": "To jest bardzo ___ dzień.",
+                "correct_answer": "schön"}
+        assert _fix_fill_blank_exercise(item) is None
+
     def test_glued_blank_rejected(self):
         # report #215: "Ona ma___ samochód" — no real gap, glued token
         item = {"type": "fill_blank", "question": "Ona ma___ samochód.",
@@ -399,6 +428,33 @@ class TestFixTranslate:
         item = {"type": "translate",
                 "question": "Это очень длинное предложение которое содержит слишком много слов для перевода на уровне A1 точно"}
         assert _fix_translate_exercise(item) is None
+
+    def test_mowi_marker_stripped_from_answer(self):
+        # review 2026-07: '(mówi kobieta)' inside correct_answer breaks exact-match checking
+        item = {"type": "translate", "question": "Я бы поехала в отпуск.",
+                "correct_answer": "Pojechałabym na wakacje. (mówi kobieta)"}
+        out = _fix_translate_exercise(item)
+        assert out["correct_answer"] == "Pojechałabym na wakacje."
+
+
+class TestStemLeak:
+    def test_letter_tiles_inflected_answer_in_question_rejected(self):
+        # review 2026-07: 'na ___ rowerem' with answer 'rowerze' — target word already visible
+        item = {"type": "letter_tiles",
+                "question": "Gdybym miał więcej czasu, pojechałbym na ___ rowerem do parku.",
+                "correct_answer": "rowerze"}
+        assert _fix_letter_tiles_exercise(item) is None
+
+    def test_fill_blank_inflected_answer_in_question_rejected(self):
+        item = {"type": "fill_blank", "question": "Na ___ rowerem jadę do pracy.",
+                "correct_answer": "rowerze"}
+        assert _fix_fill_blank_exercise(item) is None
+
+    def test_parenthetical_base_form_still_allowed(self):
+        # '(herbata)' is the intended cue format — must NOT count as a stem leak
+        item = {"type": "fill_blank", "question": "Lubię ___ (herbata).",
+                "correct_answer": "herbatę"}
+        assert _fix_fill_blank_exercise(item) is not None
 
 
 # ---------- judge_sentence ----------

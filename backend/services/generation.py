@@ -34,6 +34,7 @@ from services.validators import (
     _too_similar,
     _question_skeleton,
 )
+from services.i18n import lang_name, ui
 
 _LEVEL_ORDER = ["A0", "A1", "A2", "B1", "B2", "C1", "C2"]
 
@@ -58,17 +59,17 @@ def _clamp_vocab_level(raw, user_level: str) -> str:
 # explanation misses a pattern users specifically struggle with).
 _TOPIC_FOCUS = {
     "prepositions": (
-        "Делай упор на ВЫБОР предлога: нужен ли он и какой. Контрастируй случаи, где в польском "
-        "предлог есть, а в русском нет (czekać NA kogoś, martwić się O kogoś, słuchać kogoś без предлога) "
-        "и какой падеж требует каждый предлог."
+        "Focus on the CHOICE of preposition: whether one is needed and which. Contrast cases where "
+        "Polish uses a preposition but the user's language may not (czekać NA kogoś, martwić się O kogoś, "
+        "słuchać kogoś with no preposition) and which case each preposition governs."
     ),
     "negation": (
-        "Делай упор на nie + dopełniacz: при отрицании biernik→dopełniacz (mam kota → nie mam kota; "
-        "lubię herbatę → nie lubię herbaty). Включай двойное отрицание (nikt nic nie wie)."
+        "Focus on nie + dopełniacz: under negation biernik→dopełniacz (mam kota → nie mam kota; "
+        "lubię herbatę → nie lubię herbaty). Include double negation (nikt nic nie wie)."
     ),
     "instrumental": (
-        "ВАЖНО: różnica между «być/zostać + narzędnik» (jest lekarzem) и «pracować JAKO + mianownik» "
-        "(pracuje jako lekarz — НЕ lekarzem!). После jako — ИМЕНИТЕЛЬНЫЙ падеж. Не путай эти конструкции."
+        "IMPORTANT: the difference between «być/zostać + narzędnik» (jest lekarzem) and «pracować JAKO + "
+        "mianownik» (pracuje jako lekarz — NOT lekarzem!). After jako — NOMINATIVE case. Never mix these up."
     ),
 }
 
@@ -88,7 +89,7 @@ def _vocab_card_content(v, status: str, native_language: str, correct_streak: in
     if use_tiles:
         return {
             "type": "letter_tiles",
-            "question": f"Собери слово по-польски: {translation}",
+            "question": ui("assemble_word", native_language, translation=translation),
             "correct_answer": v.polish,
             "translation": None,
             "vocab_id": v.id,
@@ -125,12 +126,12 @@ def _build_avoid_block(user_id: int, level: str, db: Session) -> str:
             snap = json.loads(r.exercise_snapshot)
             desc = f'- [{snap.get("type","?")}] "{snap.get("question","")}" → "{snap.get("correct_answer","")}"'
             if r.comment:
-                desc += f' (ошибка: {r.comment})'
+                desc += f' (reported issue: {r.comment})'
             report_lines.append(desc)
         except Exception:
             pass
     if report_lines:
-        result += "\n\nНИКОГДА не повторяй эти упражнения — пользователь отметил их как ошибочные:\n" + "\n".join(report_lines)
+        result += "\n\nNEVER repeat these exercises — the user flagged them as faulty:\n" + "\n".join(report_lines)
 
     return result
 
@@ -316,8 +317,8 @@ def _worddef_candidates_block(user_id: int, db: Session) -> str:
     if len(words) < 3:
         return ""
     sample = random.sample(words, min(6, len(words)))
-    return ("Примерно половину загадок составь про эти слова из словаря пользователя "
-            "(закрепление изученного): " + ", ".join(sample) + ". Остальные — новые слова.\n")
+    return ("Build roughly half of the riddles around these words from the user's own vocabulary "
+            "(reinforcement of learned words): " + ", ".join(sample) + ". The rest — new words.\n")
 
 
 def _build_known_vocab_block(user_id: int, db: Session) -> str:
@@ -333,8 +334,8 @@ def _build_known_vocab_block(user_id: int, db: Session) -> str:
     words = [r[0] for r in rows]
     sample = random.sample(words, min(10, len(words)))
     return (
-        "\n\nПользователь уже знает эти слова — используй некоторые из них"
-        " в упражнениях (fill_blank, translate, judge_sentence) для закрепления: "
+        "\n\nThe user already knows these words — work some of them"
+        " into the exercises (fill_blank, translate, judge_sentence) for reinforcement: "
         + ", ".join(sample)
     )
 
@@ -358,11 +359,11 @@ def _difficulty_hint(user_id: int, db: Session) -> str:
     pct = correct / total * 100
 
     if pct >= 80:
-        return f"\n\nАДАПТАЦИЯ: последние {total} ответов — {pct:.0f}% правильных. Пользователь уверенно справляется — немного усложни лексику и грамматику."
+        return f"\n\nADAPTATION: last {total} answers — {pct:.0f}% correct. The user is doing well — make vocabulary and grammar slightly harder."
     elif pct <= 45:
-        return f"\n\nАДАПТАЦИЯ: последние {total} ответов — {pct:.0f}% правильных. Пользователь делает много ошибок — упрости задания, больше базовых конструкций и коротких фраз."
+        return f"\n\nADAPTATION: last {total} answers — {pct:.0f}% correct. The user makes many mistakes — simplify, more basic constructions and short phrases."
     else:
-        return f"\n\nАДАПТАЦИЯ: последние {total} ответов — {pct:.0f}% правильных. Сохрани текущую сложность."
+        return f"\n\nADAPTATION: last {total} answers — {pct:.0f}% correct. Keep the current difficulty."
 
 
 def _mastered_exercise_ids(user_id: int, db: Session, threshold: int = 3) -> set:
@@ -407,7 +408,7 @@ async def _generate_idiom_drill_exercises(user, db: Session, today, max_count: i
     )
     prompt = prompts.IDIOM_DRILL_PROMPT.format(
         level=user.level,
-        native_language=user.native_language,
+        native_language=lang_name(user.native_language),
         expressions=expressions_json,
     )
 
@@ -444,7 +445,7 @@ async def _generate_idiom_drill_exercises(user, db: Session, today, max_count: i
             continue
         if _norm(item.get("question", "")) in seen_qs:
             continue
-        item["topic_title"] = "Идиомы"  # session header badge
+        item["topic_title"] = ui("idioms_badge", user.native_language)  # session header badge
         db.add(models.DailyExercise(
             user_id=user.id, date=today,
             exercise_type=item.get("type"),
@@ -485,7 +486,7 @@ async def _ensure_vocab_pool(user, db: Session, threshold: int = 40, batch: int 
             system="You are a Polish vocabulary generator. Respond only with valid JSON array.",
             user=prompts.VOCAB_GENERATION_PROMPT.format(
                 level=user.level,
-                native_language=user.native_language,
+                native_language=lang_name(user.native_language),
                 count=batch,
                 avoid_words=avoid_list,
             ),
@@ -537,7 +538,7 @@ def _select_interest_themes(prefs, n: int = 2) -> str:
     prefs.recent_themes so over time every theme is covered evenly with no skew. The caller's
     later db.commit() persists the updated cursor. Mutates prefs in place.
     """
-    fallback = "не заданы (используй разнообразные темы)"
+    fallback = "not set (use varied themes)"
     if not prefs or not prefs.interest_themes:
         return fallback
     try:
@@ -686,7 +687,7 @@ async def _generate_exercises(user, count: int, interest_themes_str: str, level:
     async def _batch_idiom(batch_count):
         """Topic-free idiom flashcards from Mistral's real idiom knowledge (not forced into a grammar topic)."""
         prompt = prompts.IDIOM_FLASHCARD_PROMPT.format(
-            level=gen_level, native_language=user.native_language, count=batch_count,
+            level=gen_level, native_language=lang_name(user.native_language), count=batch_count,
         )
         for model_name, timeout_sec in [("mistral-large-latest", 60.0), ("mistral-small-latest", 40.0)]:
             try:
@@ -708,14 +709,14 @@ async def _generate_exercises(user, count: int, interest_themes_str: str, level:
     async def _batch(prompt_template, batch_count, label):
         prompt = prompt_template.format(
             level=gen_level,
-            native_language=user.native_language,
+            native_language=lang_name(user.native_language),
             interest_themes=interest_themes_str,
             count=batch_count,
             candidate_words=word_def_candidates,
         )
         if topics:
             rule_names = ", ".join(t.title_ru or t.slug for t in topics)
-            prompt = f"Правила грамматики этой сессии: {rule_names}. Используй примеры в контексте этих правил.\n\n" + prompt
+            prompt = f"Grammar rules of this session: {rule_names}. Build examples in the context of these rules.\n\n" + prompt
         for model_name, timeout_sec in [("mistral-large-latest", 60.0), ("mistral-small-latest", 40.0)]:
             try:
                 raw = await mistral.simple_prompt(
@@ -735,27 +736,30 @@ async def _generate_exercises(user, count: int, interest_themes_str: str, level:
         title = topic_obj.title_ru or topic_obj.slug
         summary = (topic_obj.explanation_ru or "")[:900]
         focus = _TOPIC_FOCUS.get(topic_obj.slug, "")
+        nl = lang_name(user.native_language)
         prompt = (
-            "Ты генератор упражнений по польскому языку.\n"
-            f"Уровень: {gen_level}. Родной язык: {user.native_language}.\n"
-            f"Тема правила: {title}\n\n"
-            f"Описание правила:\n{summary}\n\n"
-            + (f"ОСОБЫЙ ФОКУС: {focus}\n\n" if focus else "")
+            "You generate Polish language exercises.\n"
+            f"Level: {gen_level}. User's native language: {nl}.\n"
+            f"Grammar rule topic: {title}\n\n"
+            f"Rule description:\n{summary}\n\n"
+            + (f"SPECIAL FOCUS: {focus}\n\n" if focus else "")
             + prompts._EXERCISE_COMMON_RULES + "\n\n"
-            f"Сгенерируй {batch_count} упражнений. Типы: fill_blank, multiple_choice. Миксуй равномерно.\n"
-            "ВСЕ упражнения должны явно проверять это правило.\n"
-            "ЗАПРЕЩЕНО: задания о произношении или 'как читается' — только грамматика.\n\n"
+            f"Generate {batch_count} exercises. Types: fill_blank, multiple_choice. Mix evenly.\n"
+            "ALL exercises must explicitly test this rule.\n"
+            "FORBIDDEN: tasks about pronunciation or 'how is it read' — grammar only.\n\n"
             "FILL_BLANK:\n"
-            "- РОВНО ОДИН ___ в question\n"
-            "- Ответ НЕ присутствует в question\n"
-            "- hint: грамматическая категория, НЕ сам ответ\n\n"
-            "MULTIPLE_CHOICE — 4 варианта:\n"
-            "- correct_answer ДОСЛОВНО совпадает с одним из options\n"
-            "- ЗАПРЕЩЕНО: мета-вопросы где ответ виден в тексте вопроса\n\n"
-            "Ответь ТОЛЬКО валидным JSON без markdown:\n"
+            "- EXACTLY ONE ___ in question\n"
+            "- The answer is NOT present in question\n"
+            "- hint: the grammatical category, NOT the answer itself\n\n"
+            "MULTIPLE_CHOICE — 4 options:\n"
+            "- correct_answer matches one of options VERBATIM\n"
+            "- FORBIDDEN: meta-questions where the answer is visible in the question text\n\n"
+            f"translation/explanation/word_hints values are written in {nl} "
+            "(example values below are in English — write yours in the user's language).\n"
+            "Answer ONLY with valid JSON, no markdown:\n"
             '[{"type": "fill_blank", "question": "Poproszę ___ kawy.", "correct_answer": "filiżankę", '
-            '"options": null, "hint": "biernik od filiżanka", "explanation": "После poproszę — biernik", '
-            '"translation": "Прошу чашечку кофе.", "word_hints": {"poproszę": "прошу", "kawy": "кофе"}}]'
+            '"options": null, "hint": "biernik od filiżanka", "explanation": "After poproszę — biernik", '
+            '"translation": "A cup of coffee, please.", "word_hints": {"poproszę": "please give me", "kawy": "coffee"}}]'
         )
         for model_name, timeout_sec in [("mistral-large-latest", 60.0), ("mistral-small-latest", 40.0)]:
             try:
@@ -779,20 +783,23 @@ async def _generate_exercises(user, count: int, interest_themes_str: str, level:
         """Generate flashcard/translate/order_words exercises about the topic's vocabulary."""
         title = topic_obj.title_ru or topic_obj.slug
         summary = (topic_obj.explanation_ru or "")[:600]
+        nl = lang_name(user.native_language)
         prompt = (
-            "Ты генератор упражнений по польскому языку.\n"
-            f"Уровень: {gen_level}. Родной язык: {user.native_language}.\n"
-            f"Тема: {title}\n\n"
-            f"Контекст правила:\n{summary}\n\n"
+            "You generate Polish language exercises.\n"
+            f"Level: {gen_level}. User's native language: {nl}.\n"
+            f"Topic: {title}\n\n"
+            f"Rule context:\n{summary}\n\n"
             + prompts._EXERCISE_COMMON_RULES + "\n\n"
-            f"Сгенерируй {batch_count} упражнений с лексикой и фразами, связанными с этой темой.\n"
-            "Типы (смешай равномерно): translate, order_words. (Идиомы/flashcard здесь НЕ генерируй.)\n"
-            "TRANSLATE: русская фраза ≤ 10 слов → польский перевод, используя грамматику темы.\n"
-            "ORDER_WORDS: слова польского предложения перемешаны через ' / ', correct_answer = правильный порядок, translation = перевод.\n"
-            "Ответь ТОЛЬКО валидным JSON массивом без markdown:\n"
+            f"Generate {batch_count} exercises with vocabulary and phrases tied to this topic.\n"
+            "Types (mix evenly): translate, order_words. (Do NOT generate idioms/flashcards here.)\n"
+            f"TRANSLATE: a phrase in {nl}, ≤ 10 words → Polish translation using the topic's grammar.\n"
+            f"ORDER_WORDS: the Polish sentence's words shuffled and joined with ' / ', correct_answer = the right order, translation = translation into {nl}.\n"
+            f"question (for translate) and translation values are written in {nl} — "
+            "example values below are in English, write yours in the user's language.\n"
+            "Answer ONLY with a valid JSON array, no markdown:\n"
             "[\n"
-            '  {"type": "translate", "question": "Это моя книга.", "correct_answer": "To jest moja książka.", "hint": null, "translation": null},\n'
-            '  {"type": "order_words", "question": "jest / moja / To / książka", "correct_answer": "To jest moja książka.", "hint": null, "translation": "Это моя книга."}\n'
+            '  {"type": "translate", "question": "This is my book.", "correct_answer": "To jest moja książka.", "hint": null, "translation": null},\n'
+            '  {"type": "order_words", "question": "jest / moja / To / książka", "correct_answer": "To jest moja książka.", "hint": null, "translation": "This is my book."}\n'
             "]"
         )
         for model_name, timeout_sec in [("mistral-large-latest", 60.0), ("mistral-small-latest", 40.0)]:
@@ -935,31 +942,34 @@ async def _generate_topic_pool(user, topic_obj, db: Session, today, count: int):
     title = topic_obj.title_ru or topic_obj.slug
     summary = (topic_obj.explanation_ru or "")[:1000]
 
+    nl = lang_name(user.native_language)
     prompt = (
-        "Ты генератор упражнений по польскому языку.\n"
-        "Тема правила: " + title + " (уровень " + user.level + ", родной язык: " + user.native_language + ")\n\n"
-        "Описание правила (используй как основу для заданий):\n" + summary + "\n\n"
+        "You generate Polish language exercises.\n"
+        "Grammar rule topic: " + title + " (level " + user.level + ", user's native language: " + nl + ")\n\n"
+        "Rule description (use it as the base for the tasks):\n" + summary + "\n\n"
         + prompts._EXERCISE_COMMON_RULES + "\n\n"
-        "Сгенерируй ровно " + str(count) + " упражнений СТРОГО по этой теме.\n"
-        "Типы: fill_blank и multiple_choice (миксуй примерно пополам).\n"
-        "ВСЕ упражнения должны явно проверять понимание именно этого правила.\n"
-        "ЗАПРЕЩЕНО: задания о произношении, фонетической транскрипции или 'как читается' — только грамматика и лексика.\n\n"
+        "Generate exactly " + str(count) + " exercises STRICTLY on this topic.\n"
+        "Types: fill_blank and multiple_choice (roughly half each).\n"
+        "ALL exercises must explicitly test the understanding of this exact rule.\n"
+        "FORBIDDEN: tasks about pronunciation, phonetic transcription or 'how is it read' — grammar and vocabulary only.\n\n"
         "FILL_BLANK:\n"
-        "- РОВНО ОДИН ___ в question\n"
-        "- Ответ НЕ присутствует в question (не в скобках, не рядом с ___)\n"
-        "- ЗАПРЕЩЁН мужской неодушевлённый в biernik (не меняется → тривиальный)\n"
-        "- correct_answer: одно слово или устойчивая фраза без /\n"
-        "- hint: грамматическая категория, НЕ сам ответ\n"
-        "- word_hints: польские слова question → " + user.native_language + "\n\n"
-        "MULTIPLE_CHOICE — 4 варианта:\n"
-        "- correct_answer ДОСЛОВНО совпадает с одним из options\n"
-        "- Варианты принципиально разные (разные падежи/формы)\n"
-        "- Если вопрос о значении — все варианты на " + user.native_language + "\n"
-        "- word_hints: польские слова question → " + user.native_language + " (1-3 ключевых, кроме вариантов)\n\n"
-        "Ответь ТОЛЬКО валидным JSON массивом без markdown:\n"
+        "- EXACTLY ONE ___ in question\n"
+        "- The answer is NOT present in question (not in parentheses, not near ___)\n"
+        "- FORBIDDEN: masculine inanimate in biernik (form unchanged → trivial)\n"
+        "- correct_answer: one word or a fixed phrase, no /\n"
+        "- hint: the grammatical category, NOT the answer itself\n"
+        "- word_hints: Polish words of the question → " + nl + "\n\n"
+        "MULTIPLE_CHOICE — 4 options:\n"
+        "- correct_answer matches one of options VERBATIM\n"
+        "- Options are substantially different (different cases/forms)\n"
+        "- If the question is about meaning — all options in " + nl + "\n"
+        "- word_hints: Polish words of the question → " + nl + " (1-3 key ones, excluding the options)\n\n"
+        "explanation/word_hints values are written in " + nl + " (example values below are in English — "
+        "write yours in the user's language).\n"
+        "Answer ONLY with a valid JSON array, no markdown:\n"
         "[\n"
-        '  {"type": "fill_blank", "question": "Poproszę ___ kawy.", "correct_answer": "filiżankę", "options": null, "hint": "biernik od filiżanka", "explanation": "После poproszę — biernik", "translation": null, "word_hints": {"poproszę": "прошу"}},\n'
-        '  {"type": "multiple_choice", "question": "Lubię ___ (herbata).", "options": ["herbatę", "herbaty", "herbacie", "herbata"], "correct_answer": "herbatę", "hint": null, "explanation": "После lubię — biernik", "translation": null, "word_hints": {"lubię": "люблю"}}\n'
+        '  {"type": "fill_blank", "question": "Poproszę ___ kawy.", "correct_answer": "filiżankę", "options": null, "hint": "biernik od filiżanka", "explanation": "After poproszę — biernik", "translation": null, "word_hints": {"poproszę": "please give me"}},\n'
+        '  {"type": "multiple_choice", "question": "Lubię ___ (herbata).", "options": ["herbatę", "herbaty", "herbacie", "herbata"], "correct_answer": "herbatę", "hint": null, "explanation": "After lubię — biernik", "translation": null, "word_hints": {"lubię": "I like"}}\n'
         "]"
     )
 
@@ -1068,28 +1078,31 @@ async def _generate_topic_exercises_for_daily(user, db: Session, today) -> list:
     async def _gen_for_topic(topic_obj):
         title = topic_obj.title_ru or topic_obj.slug
         summary = (topic_obj.explanation_ru or "")[:1000]
+        nl = lang_name(user.native_language)
         prompt = (
-            "Ты генератор упражнений по польскому языку.\n"
-            "Тема правила: " + title + " (уровень " + user.level + ", родной язык: " + user.native_language + ")\n\n"
-            "Описание правила (используй как основу для заданий):\n" + summary + "\n\n"
+            "You generate Polish language exercises.\n"
+            "Grammar rule topic: " + title + " (level " + user.level + ", user's native language: " + nl + ")\n\n"
+            "Rule description (use it as the base for the tasks):\n" + summary + "\n\n"
             + prompts._EXERCISE_COMMON_RULES + "\n\n"
-            "Сгенерируй ровно 2 упражнения СТРОГО по этой теме.\n"
-            "Типы: fill_blank и multiple_choice (одно каждого).\n"
-            "ВСЕ упражнения должны явно проверять понимание именно этого правила.\n"
-            "ЗАПРЕЩЕНО: задания о произношении, фонетической транскрипции или 'как читается' — только грамматика и лексика.\n\n"
+            "Generate exactly 2 exercises STRICTLY on this topic.\n"
+            "Types: fill_blank and multiple_choice (one of each).\n"
+            "ALL exercises must explicitly test the understanding of this exact rule.\n"
+            "FORBIDDEN: tasks about pronunciation, phonetic transcription or 'how is it read' — grammar and vocabulary only.\n\n"
             "FILL_BLANK:\n"
-            "- РОВНО ОДИН ___ в question\n"
-            "- Ответ НЕ присутствует в question\n"
-            "- correct_answer: одно слово или устойчивая фраза без /\n"
-            "- hint: грамматическая категория, НЕ сам ответ\n\n"
-            "MULTIPLE_CHOICE — 4 варианта:\n"
-            "- correct_answer ДОСЛОВНО совпадает с одним из options\n"
-            "- Варианты принципиально разные (разные падежи/формы)\n"
-            "- word_hints: польские слова question → " + user.native_language + " (1-3 ключевых)\n\n"
-            "Ответь ТОЛЬКО валидным JSON массивом без markdown:\n"
+            "- EXACTLY ONE ___ in question\n"
+            "- The answer is NOT present in question\n"
+            "- correct_answer: one word or a fixed phrase, no /\n"
+            "- hint: the grammatical category, NOT the answer itself\n\n"
+            "MULTIPLE_CHOICE — 4 options:\n"
+            "- correct_answer matches one of options VERBATIM\n"
+            "- Options are substantially different (different cases/forms)\n"
+            "- word_hints: Polish words of the question → " + nl + " (1-3 key ones)\n\n"
+            "explanation/word_hints values are written in " + nl + " (example values below are in English — "
+            "write yours in the user's language).\n"
+            "Answer ONLY with a valid JSON array, no markdown:\n"
             "[\n"
-            '  {"type": "fill_blank", "question": "Poproszę ___ kawy.", "correct_answer": "filiżankę", "options": null, "hint": "biernik od filiżanka", "explanation": "После poproszę — biernik", "translation": null, "word_hints": {"poproszę": "прошу"}},\n'
-            '  {"type": "multiple_choice", "question": "Lubię ___ (herbata).", "options": ["herbatę", "herbaty", "herbacie", "herbata"], "correct_answer": "herbatę", "hint": null, "explanation": "После lubię — biernik", "translation": null, "word_hints": {"lubię": "люблю"}}\n'
+            '  {"type": "fill_blank", "question": "Poproszę ___ kawy.", "correct_answer": "filiżankę", "options": null, "hint": "biernik od filiżanka", "explanation": "After poproszę — biernik", "translation": null, "word_hints": {"poproszę": "please give me"}},\n'
+            '  {"type": "multiple_choice", "question": "Lubię ___ (herbata).", "options": ["herbatę", "herbaty", "herbacie", "herbata"], "correct_answer": "herbatę", "hint": null, "explanation": "After lubię — biernik", "translation": null, "word_hints": {"lubię": "I like"}}\n'
             "]"
         )
         raw = None
@@ -1151,7 +1164,7 @@ async def _generate_reading(user, db: Session, today, level: str = None):
     gen_level = level or user.level
     themes = _select_interest_themes(user.content_preferences)
     prompt = prompts.READING_PROMPT.format(
-        level=gen_level, native_language=user.native_language, interest_themes=themes,
+        level=gen_level, native_language=lang_name(user.native_language), interest_themes=themes,
     )
     raw = None
     for model_name, timeout_sec in [("mistral-large-latest", 60.0), ("mistral-small-latest", 40.0)]:
@@ -1379,6 +1392,24 @@ async def _generate_daily_pool(user, db: Session, today, count: int):
         seen_tokens = [set(q.split()) for q in seen_qs]
         skeletons = _seen_skeletons(user.id, db)  # Counter of opening-construction templates
         answers = _seen_answers(user.id, db)      # answer words already seen (word_def/flashcard)
+        # Seed with the items just drawn from the pool — they're part of THIS session;
+        # seen_qs covers only COMPLETED exercises, so a freshly generated twin of a drawn
+        # question slipped through and the same phrase appeared twice in one session.
+        for pool_ex in pool_drawn:
+            try:
+                d0 = json.loads(pool_ex.content)
+            except Exception:
+                continue
+            qn0 = _norm(d0.get("question", ""))
+            if qn0:
+                seen_qs.add(qn0); seen_tokens.append(set(qn0.split()))
+            sk0 = _question_skeleton(d0.get("question", ""))
+            if sk0:
+                skeletons[sk0] += 1
+            if d0.get("type") in _ANSWER_DEDUP_TYPES:
+                a0 = _strip((d0.get("correct_answer") or "")).rstrip('.?!,;')
+                if a0:
+                    answers.add(a0)
         _SKELETON_MAX = 2  # allow a construction at most twice before it feels like a drill
         validated = []
         for item in generated:
@@ -1495,6 +1526,24 @@ async def _generate_bonus_pool(user, db: Session, today, count: int):
         seen_tokens = [set(q.split()) for q in seen_qs]
         skeletons = _seen_skeletons(user.id, db)  # Counter of opening-construction templates
         answers = _seen_answers(user.id, db)      # answer words already seen (word_def/flashcard)
+        # Seed with the items just drawn from the pool — they're part of THIS session;
+        # seen_qs covers only COMPLETED exercises, so a freshly generated twin of a drawn
+        # question slipped through and the same phrase appeared twice in one session.
+        for pool_ex in pool_drawn:
+            try:
+                d0 = json.loads(pool_ex.content)
+            except Exception:
+                continue
+            qn0 = _norm(d0.get("question", ""))
+            if qn0:
+                seen_qs.add(qn0); seen_tokens.append(set(qn0.split()))
+            sk0 = _question_skeleton(d0.get("question", ""))
+            if sk0:
+                skeletons[sk0] += 1
+            if d0.get("type") in _ANSWER_DEDUP_TYPES:
+                a0 = _strip((d0.get("correct_answer") or "")).rstrip('.?!,;')
+                if a0:
+                    answers.add(a0)
         _SKELETON_MAX = 2  # allow a construction at most twice before it feels like a drill
         validated = []
         for item in generated:

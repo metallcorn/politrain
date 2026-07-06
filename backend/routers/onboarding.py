@@ -8,6 +8,7 @@ import models
 import schemas
 import prompts
 from services import mistral
+from services.i18n import lang_name
 
 router = APIRouter(prefix="/onboarding", tags=["onboarding"])
 
@@ -71,7 +72,7 @@ async def get_placement_test(current_user: models.User = Depends(get_current_use
     try:
         raw = await mistral.simple_prompt(
             system="You are a Polish language placement test generator. Generate exactly 10 questions.",
-            user=prompts.PLACEMENT_TEST_PROMPT.format(native_language=lang),
+            user=prompts.PLACEMENT_TEST_PROMPT.format(native_language=lang_name(lang)),
             temperature=0.5,
             max_tokens=3000,
         )

@@ -10,6 +10,7 @@ import models
 import schemas
 import prompts
 from services import mistral
+from services.i18n import lang_name, ui
 from services.gamification import add_xp, XP_COMPLETE_TOPIC, check_achievements, update_daily_activity
 
 router = APIRouter(prefix="/topics", tags=["topics"])
@@ -146,21 +147,21 @@ async def get_lesson(
                 for r in reports:
                     try:
                         snap = json.loads(r.exercise_snapshot)
-                        desc = f'- Вопрос: "{snap["question"]}" / Ответ: "{snap["correct_answer"]}"'
+                        desc = f'- Question: "{snap["question"]}" / Answer: "{snap["correct_answer"]}"'
                         if r.comment:
-                            desc += f' (ошибка: {r.comment})'
+                            desc += f' (reported issue: {r.comment})'
                         examples.append(desc)
                     except Exception:
                         pass
                 if examples:
-                    avoid_block = "\n\nИЗБЕГАЙ повторения этих упражнений — они были помечены как ошибочные:\n" + "\n".join(examples)
+                    avoid_block = "\n\nAVOID repeating these exercises — they were flagged as faulty:\n" + "\n".join(examples)
 
             raw = await mistral.simple_prompt(
                 system="You are a Polish language exercise generator. Respond only with valid JSON array.",
                 user=prompts.TOPIC_EXERCISES_PROMPT.format(
                     topic_title=title,
                     level=current_user.level,
-                    native_language=lang,
+                    native_language=lang_name(lang),
                     count=need,
                 ) + avoid_block,
                 temperature=0.7,
@@ -262,11 +263,11 @@ async def get_lesson(
         try:
             explanation = await mistral.simple_prompt(
                 system=prompts.TOPIC_EXPLANATION_PROMPT.format(
-                    native_language=lang,
+                    native_language=lang_name(lang),
                     level=current_user.level,
                     topic_title=title,
                 ),
-                user=f"Объясни тему: {title}",
+                user=f"Explain the topic: {title}",
                 temperature=0.6,
                 max_tokens=1500,
             )
@@ -277,7 +278,7 @@ async def get_lesson(
                 topic.explanation_en = explanation
             db.commit()
         except Exception:
-            explanation = f"**{title}**\n\nAI временно недоступен. Используйте упражнения для изучения темы."
+            explanation = ui("ai_unavailable_topic", lang, title=title)
 
     return {
         "topic_slug": slug,
@@ -305,14 +306,14 @@ async def next_example(
             system="You are a Polish language teacher. Give a short, practical example.",
             user=prompts.TOPIC_EXAMPLE_PROMPT.format(
                 level=current_user.level,
-                native_language=lang,
+                native_language=lang_name(lang),
                 topic_title=title,
             ),
             temperature=0.8,
             max_tokens=500,
         )
     except Exception:
-        example = "AI временно недоступен."
+        example = ui("ai_unavailable", lang)
 
     return {"example": example}
 
