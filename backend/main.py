@@ -40,6 +40,7 @@ def _migrate():
             "UPDATE users SET best_streak = streak_days WHERE best_streak = 0 AND streak_days > 0",
             "ALTER TABLE mistral_call_logs ADD COLUMN error_message TEXT",
             "ALTER TABLE user_content_preferences ADD COLUMN recent_themes TEXT",
+            "ALTER TABLE daily_exercises ADD COLUMN user_answer TEXT",
         ]:
             try:
                 conn.execute(__import__('sqlalchemy').text(sql))

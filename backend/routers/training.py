@@ -722,6 +722,7 @@ async def submit_answer(
 
                 de.is_completed = True
                 de.is_correct = is_correct
+                de.user_answer = body.user_answer
                 de.completed_at = datetime.utcnow()
 
                 # XP mode for vocab cards (flashcard OR letter_tiles tied to a vocab word)
@@ -1341,24 +1342,32 @@ async def _check_translation(user_answer: str, correct_answer: str, question: st
 
 async def _check_word_order(user_answer: str, correct_answer: str, translation: str, user) -> bool:
     """Lenient order_words check: same words, different order — ask Mistral if the
-    user's order is also grammatical/natural Polish (word order is largely free)."""
-    try:
-        raw = await mistral.simple_prompt(
-            system="You are a Polish language checker. Respond only with JSON.",
-            user=prompts.WORD_ORDER_CHECK_PROMPT.format(
-                correct_answer=correct_answer,
-                user_answer=user_answer,
-                translation=translation or "",
-            ),
-            temperature=0.1,
-            max_tokens=100,
-            retries=2,
-            model="mistral-small-latest",
-            purpose="order_check",
-            user_id=user.id,
-        )
-        result = await mistral.parse_json_response(raw)
-        return bool(result.get("correct", False))
-    except Exception:
-        return False
+    user's order is also grammatical/natural Polish (word order is largely free).
+
+    small is cheap but rejects valid variants (vocative moved to the end — report #240);
+    a REJECTION is escalated to large before the user is marked wrong. Acceptances are
+    trusted as-is, so the extra call happens only on the rare reject path."""
+    prompt = prompts.WORD_ORDER_CHECK_PROMPT.format(
+        correct_answer=correct_answer,
+        user_answer=user_answer,
+        translation=translation or "",
+    )
+    for model_name in ("mistral-small-latest", "mistral-large-latest"):
+        try:
+            raw = await mistral.simple_prompt(
+                system="You are a Polish language checker. Respond only with JSON.",
+                user=prompt,
+                temperature=0.1,
+                max_tokens=100,
+                retries=2,
+                model=model_name,
+                purpose="order_check",
+                user_id=user.id,
+            )
+            result = await mistral.parse_json_response(raw)
+            if bool(result.get("correct", False)):
+                return True
+        except Exception:
+            continue
+    return False
 

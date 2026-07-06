@@ -453,8 +453,11 @@ async def main():
 asyncio.run(main())
 "
 # Ожидаем: multiset=True; валидная перестановка → True; оторванные предлоги → False
+# Обращение/вокатив в конце ("Proszę o dokumenty Panie Kowalski") → True (#240)
 # Срабатывает в submit_answer только если _same_word_multiset (те же слова) и строгая проверка не прошла
-# В mistral_call_logs: purpose='order_check' (small); проверка перевода: purpose='translation_check'
+# В mistral_call_logs: purpose='order_check' (small; при вердикте false — эскалация на large, второй лог order_check)
+# Проверка перевода: purpose='translation_check'
+# Разбор жалоб «не засчитали»: SELECT user_answer FROM daily_exercises WHERE id=<daily_exercise_id>
 ```
 
 ### 20б. Чтение с пониманием (mode=reading)
@@ -934,3 +937,5 @@ frontend/src/
 | «(mówi kobieta)» внутри correct_answer у translate | Маркер пола попадал в эталон → exact-match никогда не сходился | `_fix_translate_exercise` вырезает `\(mówi …\)` из correct_answer |
 | Одна фраза дважды в одной сессии (pool + свежая генерация) | `seen_qs` = только completed; свежесгенерированный близнец только что выданного из пула проходил дедуп | Оба цикла (daily/bonus) сидируют seen_qs/skeletons/answers элементами `pool_drawn` ДО валидации генерации |
 | Пул хранит нативные поля на языке генератора | translation/word_hints в content записаны на языке юзера-генератора (сейчас ru); не-ru юзер вытянет русские подсказки | ИЗВЕСТНОЕ ОГРАНИЧЕНИЕ: перед запуском для не-ru юзеров добавить колонку native_lang в exercise_pool и фильтр в `_pool_draw`. UI-данные (ранги, day_names, exam-тексты, achievements, фронтенд) — тоже отложены до фазы i18n UI |
+| order_words: валидный вариант с обращением отклонён («Proszę o dokumenty Panie Kowalski», #240) | small-модель браковала перенос вокатива в конец; отказ уходил юзеру без перепроверки | WORD_ORDER_CHECK_PROMPT: шаг 4 — обращение/вокатив может стоять в начале ИЛИ в конце, запятые игнорировать + пример; `_check_word_order`: вердикт false от small эскалируется на large (доп. вызов только на редком reject-пути) |
+| «Не засчитали, а что я ввёл — неизвестно» | DailyExercise не хранил ответ юзера — жалобы «всё правильно но не засчитали» неразбираемы | Колонка `daily_exercises.user_answer` (миграция в main.py), пишется в submit_answer; при разборе таких жалоб СНАЧАЛА смотреть `SELECT user_answer FROM daily_exercises WHERE id=<daily_exercise_id>` |

@@ -271,6 +271,7 @@ class DailyExercise(Base):
     pool_exercise_id = Column(Integer, ForeignKey("exercise_pool.id"), nullable=True)
     is_completed = Column(Boolean, default=False)
     is_correct = Column(Boolean, nullable=True)
+    user_answer = Column(Text, nullable=True)  # what the user actually submitted — needed to triage "wrongly rejected" reports (#240)
     completed_at = Column(DateTime, nullable=True)
     generated_at = Column(DateTime, default=func.now())
     next_review = Column(Date, nullable=True)

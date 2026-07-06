@@ -78,7 +78,9 @@ CHECK ALGORITHM (follow step by step, do not skip):
    Its noun/pronoun must come IMMEDIATELY AFTER the preposition. If a preposition is detached — correct: false.
 2. The particle "nie" must stand directly before the verb it negates. Otherwise — false.
 3. A question word (co, kto, gdzie, kiedy, dlaczego, jak, czy) must be at the beginning. Otherwise — false.
-4. If steps 1-3 pass and the order sounds natural to a native speaker — correct: true.
+4. A vocative/address phrase (Panie Kowalski, mamo, Aniu) may stand at the BEGINNING or at the END
+   of the sentence — both are correct. Ignore commas and capitalisation entirely.
+5. If steps 1-4 pass and the order sounds natural to a native speaker — correct: true.
 
 EXAMPLES:
 reference "Wychodzę z domu po pracy.":
@@ -88,6 +90,9 @@ reference "Wychodzę z domu po pracy.":
 reference "Nie mam czasu.":
 ✓ "Czasu nie mam" → true (emphatic order — acceptable)
 ✗ "Mam nie czasu" → false (nie not before the verb)
+reference "Panie Kowalski, proszę o dokumenty.":
+✓ "Proszę o dokumenty Panie Kowalski" → true (address moved to the end — natural)
+✗ "Proszę Panie o dokumenty Kowalski" → false (address phrase torn apart)
 
 Answer with JSON: {{"correct": true/false}}
 JSON only, no markdown.
