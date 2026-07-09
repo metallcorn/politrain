@@ -476,11 +476,12 @@ def _fix_order_words_exercise(item: dict) -> dict | None:
     if not question or not correct:
         return None
 
-    # Extract words from question (split by /). Drop standalone punctuation tokens —
-    # Mistral sometimes splits the period into its own chip ("... / samochód / . / nowy"),
-    # which the user then has to place as a "word" (report #232).
+    # Extract words from question (split by /). A chip must contain a LETTER: this drops
+    # standalone punctuation ("." — report #232) AND stray digit cues ("(3)" — report #243,
+    # the fill_blank numeral-cue rule leaking into order_words; the numeral word is already
+    # among the chips, so the cue is pure noise there).
     raw_words = [w.strip() for w in question.split("/") if w.strip()]
-    raw_words = [w for w in raw_words if re.search(r'\w', w)]
+    raw_words = [w for w in raw_words if re.search(r'[^\W\d_]', w)]
     q_words = sorted(_strip(re.sub(r'\(.*?\)', '', w).rstrip('.?!,;')) for w in raw_words)
     q_words = [w for w in q_words if w]
 

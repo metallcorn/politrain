@@ -464,6 +464,20 @@ class TestLetterTilesQuality:
         assert out is not None and out["hint"] == "biernik od kawa"
 
 
+class TestOrderWordsDigitCue:
+    def test_digit_cue_chip_dropped(self):
+        # report #243: "(3)" arrived as its own chip — the fill_blank numeral-cue rule
+        # leaked into order_words where the numeral word (trzy) is already visible
+        item = {"type": "order_words",
+                "question": "kupiłam / jabłka / trzy / czerwone / (3) / wczoraj",
+                "correct_answer": "Wczoraj kupiłam trzy czerwone jabłka."}
+        out = _fix_order_words_exercise(item)
+        assert out is not None
+        assert "(3)" not in out["question"]
+        assert sorted(out["question"].split(" / ")) == sorted(
+            "kupiłam jabłka trzy czerwone wczoraj".split())
+
+
 class TestStemLeak:
     def test_letter_tiles_inflected_answer_in_question_rejected(self):
         # review 2026-07: 'na ___ rowerem' with answer 'rowerze' — target word already visible
