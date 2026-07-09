@@ -445,6 +445,20 @@ class TestLetterTilesQuality:
                 "correct_answer": "narodową"}
         assert _fix_letter_tiles_exercise(item) is None
 
+    def test_russian_letter_enumeration_rejected(self):
+        # pool 752/753/845: the old pattern anchored letters to '(' — a Russian label
+        # '(буквы: o, d, ...)' between them slipped through
+        item = {"type": "letter_tiles",
+                "question": "Po podróży muszę się ___ w łóżku. (буквы: o, d, p, o, c, z, y, n, ą, ć)",
+                "correct_answer": "odpocząć"}
+        assert _fix_letter_tiles_exercise(item) is None
+
+    def test_literatura_word_not_false_positive(self):
+        item = {"type": "letter_tiles", "question": "Czytam polską ___ przed snem.",
+                "correct_answer": "literaturę",
+                "word_hints": {"czytam": "читаю", "przed snem": "перед сном"}}
+        assert _fix_letter_tiles_exercise(item) is not None
+
     def test_format_b_inflected_answer_rejected(self):
         # report #241: format B has no sentence context — a case form (marchewką) is meaningless
         item = {"type": "letter_tiles", "question": "Напиши по-польски: морковь",

@@ -1397,8 +1397,8 @@ async def _generate_daily_pool_inner(user, db: Session, today, count: int):
 
     # Pool-first: serve unseen exercises from shared pool, generate only the deficit
     pool_drawn = _pool_draw(db, user.id, user.level, ai_target,
-                            seen_norms=_seen_questions(user.id, db, limit=150),
-                            seen_skeletons=set(_seen_skeletons(user.id, db, limit=300)),
+                            seen_norms=_seen_questions(user.id, db, limit=400),
+                            seen_skeletons=set(_seen_skeletons(user.id, db, limit=600)),
                             seen_answers=_seen_answers(user.id, db))
     pool_ai_added = 0
     for pool_ex in pool_drawn:
@@ -1430,9 +1430,9 @@ async def _generate_daily_pool_inner(user, db: Session, today, count: int):
             _generate_exercises(user, deficit, interest_themes_str, topics=gen_topics or None, db=db),
             _generate_topic_exercises_for_daily(user, db, today),
         )
-        seen_qs = _seen_questions(user.id, db)
+        seen_qs = _seen_questions(user.id, db, limit=400)  # ~4 days at the user's real pace
         seen_tokens = [set(q.split()) for q in seen_qs]
-        skeletons = _seen_skeletons(user.id, db)  # Counter of opening-construction templates
+        skeletons = _seen_skeletons(user.id, db, limit=400)  # Counter of opening-construction templates
         answers = _seen_answers(user.id, db)      # answer words already seen (word_def/flashcard)
         # Seed with the items just drawn from the pool — they're part of THIS session;
         # seen_qs covers only COMPLETED exercises, so a freshly generated twin of a drawn
@@ -1550,8 +1550,8 @@ async def _generate_bonus_pool_inner(user, db: Session, today, count: int):
 
     # Pool-first: serve unseen bonus exercises from shared pool at challenge level
     pool_drawn = _pool_draw(db, user.id, challenge_level, count,
-                            seen_norms=_seen_questions(user.id, db, limit=150),
-                            seen_skeletons=set(_seen_skeletons(user.id, db, limit=300)),
+                            seen_norms=_seen_questions(user.id, db, limit=400),
+                            seen_skeletons=set(_seen_skeletons(user.id, db, limit=600)),
                             seen_answers=_seen_answers(user.id, db))
     pool_added = 0
     for pool_ex in pool_drawn:
@@ -1578,9 +1578,9 @@ async def _generate_bonus_pool_inner(user, db: Session, today, count: int):
 
     if deficit > 0:
         generated = await _generate_exercises(user, deficit, interest_themes_str, level=challenge_level, topics=gen_topics or None, db=db)
-        seen_qs = _seen_questions(user.id, db)
+        seen_qs = _seen_questions(user.id, db, limit=400)  # ~4 days at the user's real pace
         seen_tokens = [set(q.split()) for q in seen_qs]
-        skeletons = _seen_skeletons(user.id, db)  # Counter of opening-construction templates
+        skeletons = _seen_skeletons(user.id, db, limit=400)  # Counter of opening-construction templates
         answers = _seen_answers(user.id, db)      # answer words already seen (word_def/flashcard)
         # Seed with the items just drawn from the pool — they're part of THIS session;
         # seen_qs covers only COMPLETED exercises, so a freshly generated twin of a drawn

@@ -143,7 +143,7 @@ async def get_training_session(
                     models.DailyExercise.user_id == current_user.id,
                     models.DailyExercise.is_completed == True,
                     models.DailyExercise.is_correct == False,
-                    models.DailyExercise.source.in_(["bonus", "new", "topic", "topic_d"]),
+                    models.DailyExercise.source.in_(["bonus", "new", "topic", "topic_d", "review_ai"]),  # review_ai wrongs must not vanish
                     models.DailyExercise.completed_at.isnot(None),
                     models.DailyExercise.completed_at >= cutoff,
                 )
@@ -1137,7 +1137,7 @@ def training_stats(
         models.DailyExercise.user_id == current_user.id,
         models.DailyExercise.is_completed == True,
         models.DailyExercise.is_correct == False,
-        models.DailyExercise.source.in_(["bonus", "new", "topic", "topic_d"]),
+        models.DailyExercise.source.in_(["bonus", "new", "topic", "topic_d", "review_ai"]),  # review_ai wrongs must not vanish
         models.DailyExercise.completed_at.isnot(None),
         models.DailyExercise.completed_at >= ai_cutoff,
     ).count()
