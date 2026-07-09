@@ -1123,7 +1123,9 @@ async def _generate_topic_exercises_for_daily(user, db: Session, today) -> list:
             return []
 
         generated = await mistral.parse_json_response(raw)
-        seen_qs = _seen_questions(user.id, db)
+        # topic_d repeats every ~10 days per topic — the default 60-item window (~2 days)
+        # forgot earlier runs and the same question came back 4x ('буква ц', feedback #138)
+        seen_qs = _seen_questions(user.id, db, limit=500)
         results = []
         for item in generated:
             item = _validate_type(item)

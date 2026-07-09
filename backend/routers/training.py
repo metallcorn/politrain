@@ -720,6 +720,7 @@ async def submit_answer(
                                 content.get("translation", ""), current_user
                             )
 
+                prev_correct = de.is_correct  # before overwrite — an error being corrected is an SRS signal
                 de.is_completed = True
                 de.is_correct = is_correct
                 de.user_answer = body.user_answer
@@ -731,19 +732,26 @@ async def submit_answer(
                 elif ex_type in ("flashcard", "letter_tiles") and content.get("vocab_id"):
                     _vocab_mode = "reduced"   # SRS vocab in daily review — easier than exercises
 
-                # SRS scheduling for AI exercises
+                # SRS scheduling for AI exercises. Only items with a SIGNAL are scheduled:
+                # a diacritic slip, an error being corrected, or an item already in the SRS
+                # chain (review_ai). Scheduling EVERY correct answer flooded the queue —
+                # 724 overdue at 3 served/day vs ~30 scheduled/day (feedback #138).
                 if de.source in ("new", "bonus", "review_ai"):
                     if is_correct:
-                        quality = 3 if diacritic_hint else 5
-                        _, new_interval, new_reps, next_rev = calculate_next_review(
-                            2.5,
-                            max(1, de.srs_interval_days or 1),
-                            de.srs_repetitions or 0,
-                            quality,
-                        )
-                        de.srs_interval_days = new_interval
-                        de.srs_repetitions = new_reps
-                        de.next_review = next_rev
+                        needs_srs = bool(diacritic_hint) or de.source == "review_ai" or prev_correct is False
+                        if needs_srs:
+                            quality = 3 if diacritic_hint else 5
+                            _, new_interval, new_reps, next_rev = calculate_next_review(
+                                2.5,
+                                max(1, de.srs_interval_days or 1),
+                                de.srs_repetitions or 0,
+                                quality,
+                            )
+                            de.srs_interval_days = new_interval
+                            de.srs_repetitions = new_reps
+                            de.next_review = next_rev
+                        else:
+                            de.next_review = None
                     else:
                         de.srs_interval_days = 0
                         de.srs_repetitions = 0
@@ -785,7 +793,11 @@ async def submit_answer(
                         db.flush()
                     old_score = prog.score or 0.0
                     old_att = prog.attempts or 0
-                    prog.score = (old_score * old_att + (1.0 if is_correct else 0.0)) / (old_att + 1)
+                    # EMA (~last 20 answers dominate) instead of a lifetime average: at 300
+                    # attempts one answer moved the score by 1/301 — 'alphabet' froze at 0.67
+                    # forever and kept being picked as weak (feedback #138)
+                    alpha = max(1.0 / (old_att + 1), 1.0 / 20.0)
+                    prog.score = old_score + alpha * ((1.0 if is_correct else 0.0) - old_score)
                     prog.attempts = old_att + 1
                     # Require meaningful practice before marking done:
                     # new/bonus = incidental exposure, needs many reps; topic/topic_d = dedicated practice
@@ -810,7 +822,8 @@ async def submit_answer(
                             if prog:
                                 old_score = prog.score or 0.0
                                 old_att = prog.attempts or 0
-                                prog.score = (old_score * old_att + (1.0 if is_correct else 0.0)) / (old_att + 1)
+                                alpha = max(1.0 / (old_att + 1), 1.0 / 20.0)  # EMA, see comment above
+                                prog.score = old_score + alpha * ((1.0 if is_correct else 0.0) - old_score)
                                 prog.attempts = old_att + 1
                                 if prog.score >= 0.75 and prog.attempts >= 5:
                                     prog.status = "done"
@@ -942,7 +955,8 @@ async def submit_answer(
                 old_score = progress.score or 0.0
                 old_attempts = progress.attempts or 0
                 result = 1.0 if is_correct else 0.0
-                progress.score = (old_score * old_attempts + result) / (old_attempts + 1)
+                alpha = max(1.0 / (old_attempts + 1), 1.0 / 20.0)  # EMA, see comment above
+                progress.score = old_score + alpha * (result - old_score)
                 progress.attempts = old_attempts + 1
                 if progress.score >= 0.75 and progress.attempts >= 6:
                     progress.status = "done"
