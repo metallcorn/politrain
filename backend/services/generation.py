@@ -27,6 +27,7 @@ from services.validators import (
     _fix_mc_exercise,
     _fix_fill_blank_exercise,
     _fix_letter_tiles_exercise,
+    _tilesify,
     _fix_translate_exercise,
     _fix_judge_sentence_exercise,
     _fix_order_words_exercise,
@@ -272,8 +273,9 @@ def _seen_skeletons(user_id: int, db: Session, limit: int = 80) -> Counter:
 
 
 # Types where the ANSWER word is the thing being learned — repeating it (drogeria over
-# and over, #234) wastes the slot regardless of how the riddle/phrase is worded.
-_ANSWER_DEDUP_TYPES = {"word_definition", "flashcard"}
+# and over, #234; typing 'pracy' yet again, feedback #134) wastes the slot regardless
+# of how the riddle/sentence around it is worded.
+_ANSWER_DEDUP_TYPES = {"word_definition", "flashcard", "letter_tiles"}
 
 def _seen_answers(user_id: int, db: Session, limit: int = 1500) -> set:
     """Normalized answer words the user recently saw for answer-centric types, so generation
@@ -434,6 +436,7 @@ async def _generate_idiom_drill_exercises(user, db: Session, today, max_count: i
     for item in generated:
         item = _validate_type(item)
         item = _fix_fill_blank_exercise(item) if item else None
+        item = _tilesify(item) if item else None  # format A: Python picks the blank word (#114)
         item = _fix_letter_tiles_exercise(item) if item else None
         if item is None:
             continue
@@ -1158,7 +1161,32 @@ async def _generate_topic_exercises_for_daily(user, db: Session, today) -> list:
     return entries
 
 
+# One generation at a time per user. Two concurrent session requests (frontend retry
+# after a slow Mistral call, double tap) both saw an empty batch and both generated —
+# the same pool entries were served twice in one day (feedback #112/#122/#124-127:
+# pool ids 780-784 duplicated 30s apart). The second request now waits, re-checks
+# inside the lock and returns if the batch already exists. Single uvicorn worker →
+# an in-process asyncio.Lock is sufficient.
+_USER_GEN_LOCKS: dict = {}
+
+def _user_gen_lock(user_id: int) -> asyncio.Lock:
+    return _USER_GEN_LOCKS.setdefault(user_id, asyncio.Lock())
+
+
 async def _generate_reading(user, db: Session, today, level: str = None):
+    async with _user_gen_lock(user.id):
+        db.commit()  # end any read snapshot so rows committed by a parallel request are visible
+        if db.query(models.DailyExercise).filter(
+            models.DailyExercise.user_id == user.id,
+            models.DailyExercise.date == today,
+            models.DailyExercise.source == "reading",
+            models.DailyExercise.is_completed == False,
+        ).count() > 0:
+            return
+        return await _generate_reading_inner(user, db, today, level)
+
+
+async def _generate_reading_inner(user, db: Session, today, level: str = None):
     """Generate one reading-comprehension passage + 3 MC questions (source='reading').
     A single DailyExercise of type='reading'; scored as a unit in submit_answer."""
     gen_level = level or user.level
@@ -1229,6 +1257,18 @@ async def _generate_reading(user, db: Session, today, level: str = None):
 
 
 async def _generate_daily_pool(user, db: Session, today, count: int):
+    async with _user_gen_lock(user.id):
+        db.commit()  # see rows a parallel request just committed
+        if db.query(models.DailyExercise).filter(
+            models.DailyExercise.user_id == user.id,
+            models.DailyExercise.date == today,
+            models.DailyExercise.source.notin_(["bonus", "vocab", "topic", "practice"]),
+        ).count() > 0:
+            return  # a concurrent request already built today's pool
+        return await _generate_daily_pool_inner(user, db, today, count)
+
+
+async def _generate_daily_pool_inner(user, db: Session, today, count: int):
     prefs = user.content_preferences
     completed_topics = db.query(models.Topic).join(models.UserTopicProgress).filter(
         models.UserTopicProgress.user_id == user.id,
@@ -1416,6 +1456,7 @@ async def _generate_daily_pool(user, db: Session, today, count: int):
             item = _validate_type(item)
             item = _fix_mc_exercise(item) if item else None
             item = _fix_fill_blank_exercise(item) if item else None
+            item = _tilesify(item) if item else None  # format A: Python picks the blank word (#114)
             item = _fix_letter_tiles_exercise(item) if item else None
             item = _fix_order_words_exercise(item) if item else None
             item = _fix_flashcard_exercise(item) if item else None
@@ -1481,6 +1522,19 @@ async def _generate_daily_pool(user, db: Session, today, count: int):
 
 
 async def _generate_bonus_pool(user, db: Session, today, count: int):
+    async with _user_gen_lock(user.id):
+        db.commit()  # see rows a parallel request just committed
+        if db.query(models.DailyExercise).filter(
+            models.DailyExercise.user_id == user.id,
+            models.DailyExercise.date == today,
+            models.DailyExercise.source == "bonus",
+            models.DailyExercise.is_completed == False,
+        ).count() > 0:
+            return  # a concurrent request already produced this batch (#122/#124-127)
+        return await _generate_bonus_pool_inner(user, db, today, count)
+
+
+async def _generate_bonus_pool_inner(user, db: Session, today, count: int):
     prefs = user.content_preferences
 
     # Drill known idioms before generating the main bonus batch
@@ -1550,6 +1604,7 @@ async def _generate_bonus_pool(user, db: Session, today, count: int):
             item = _validate_type(item)
             item = _fix_mc_exercise(item) if item else None
             item = _fix_fill_blank_exercise(item) if item else None
+            item = _tilesify(item) if item else None  # format A: Python picks the blank word (#114)
             item = _fix_letter_tiles_exercise(item) if item else None
             item = _fix_order_words_exercise(item) if item else None
             item = _fix_flashcard_exercise(item) if item else None

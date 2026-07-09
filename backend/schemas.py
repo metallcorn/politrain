@@ -227,6 +227,7 @@ class SessionRatingRequest(BaseModel):
     rating: Optional[int] = None  # 1-5
     comment: Optional[str] = None
     exercise_ids: Optional[list[int]] = None
+    rating_id: Optional[int] = None  # update an already-sent rating (star click sends immediately, comment follows)
 
 
 class ExplainRequest(BaseModel):

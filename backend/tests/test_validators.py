@@ -13,7 +13,7 @@ from services.validators import (
     _clean_word_hints, _require_word_hints, _check_modal_has_infinitive,
     _fix_flashcard_exercise, _fix_mc_exercise, _fix_fill_blank_exercise,
     _fix_letter_tiles_exercise, _fix_translate_exercise, _fix_judge_sentence_exercise,
-    _fix_order_words_exercise, _fix_word_definition_exercise,
+    _fix_order_words_exercise, _fix_word_definition_exercise, _tilesify,
     _check_answer, _same_word_multiset, _too_similar, _question_skeleton, _VALID_EXERCISE_TYPES,
 )
 
@@ -462,6 +462,44 @@ class TestLetterTilesQuality:
                 "correct_answer": "kawę", "hint": "biernik od kawa"}
         out = _fix_letter_tiles_exercise(item)
         assert out is not None and out["hint"] == "biernik od kawa"
+
+
+class TestTilesify:
+    def test_full_sentence_gets_blanked(self):
+        # feedback #114: Python picks the word — sentence/answer/translation always consistent
+        item = {"type": "letter_tiles", "correct_answer": None,
+                "question": "Lubię pić gorącą kawę codziennie rano.",
+                "translation": "Я люблю пить горячий кофе каждое утро.",
+                "word_hints": {"lubię": "люблю", "gorącą": "горячий", "kawę": "кофе"}}
+        out = _tilesify(dict(item))
+        assert out is not None and "___" in out["question"]
+        ans = out["correct_answer"]
+        assert ans and ans in item["question"].lower()
+        assert ans not in out["question"].lower()
+        # the blanked word's own hint is removed
+        assert all(not k.startswith(ans[:4]) for k in (out["word_hints"] or {}))
+
+    def test_format_b_passthrough(self):
+        item = {"type": "letter_tiles", "question": "Напиши по-польски: счастье",
+                "correct_answer": "szczęście"}
+        assert _tilesify(dict(item))["question"] == item["question"]
+
+    def test_too_short_sentence_rejected(self):
+        item = {"type": "letter_tiles", "correct_answer": None, "question": "To jest kot."}
+        assert _tilesify(item) is None
+
+
+class TestCyrillicCue:
+    def test_native_language_cue_rejected(self):
+        # feedback #133: '(интереснее)' fits both 'bardziej interesujący' and 'ciekawszy'
+        item = {"type": "fill_blank", "question": "Ten film jest ___ niż poprzedni. (интереснее)",
+                "correct_answer": "bardziej interesujący"}
+        assert _fix_fill_blank_exercise(item) is None
+
+    def test_mowi_marker_kept(self):
+        item = {"type": "fill_blank", "question": "Wczoraj ___ do pracy. (mówi kobieta)",
+                "correct_answer": "poszłam"}
+        assert _fix_fill_blank_exercise(item) is not None
 
 
 class TestOrderWordsDigitCue:

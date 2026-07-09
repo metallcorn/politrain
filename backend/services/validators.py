@@ -266,6 +266,13 @@ def _fix_fill_blank_exercise(item: dict) -> dict | None:
     if _has_non_polish_letters(correct):
         return None
 
+    # A parenthetical cue written in the user's language ('(интереснее)') is ambiguous —
+    # several Polish words fit the translation (bardziej interesujący vs ciekawszy), so the
+    # "one correct answer" contract breaks (feedback #133). Cues must be the Polish lemma.
+    for m in re.finditer(r'\(([^)]*)\)', question):
+        if re.search(r'[а-яёА-ЯЁ]', m.group(1)) and 'mówi' not in m.group(1):
+            return None
+
     # Numeral answer: without a digit cue any number fits (#236 'zjadłem ___ jajek' → dwa);
     # and the blank must not cut a compound numeral in half (#239 'dwudziestego ___ maja (5)').
     if any(_is_numeral_word(w) for w in correct.split()):
@@ -366,6 +373,44 @@ def _check_modal_has_infinitive(item: dict) -> bool:
     question = item.get("question", "")
     # An infinitive ends in -ć or -c (e.g. przyjść, być, pracować, móc)
     return bool(re.search(r'\w+[ćc]\b', question, re.IGNORECASE))
+
+
+_PL_DIACRITIC_RE = re.compile(r'[ąćęłńóśźż]', re.IGNORECASE)
+
+def _tilesify(item: dict) -> dict | None:
+    """Turn a format-A letter_tiles item (full Polish sentence, correct_answer=null) into a
+    blank exercise by picking the target word in PYTHON, not in the prompt. Mistral used to
+    pick the word itself and constantly desynced sentence/answer/translation/hints (feedback
+    #114: the blanked word was missing from the translation; #121/#131: letters listed in the
+    text). Choosing here guarantees: the word really comes from the sentence, the translation
+    stays complete, and the word never leaks. Prefers 5+-letter words with Polish diacritics;
+    skips the first word (capitalised). Returns None when no suitable word exists."""
+    if item is None or item.get("type") != "letter_tiles":
+        return item
+    if item.get("correct_answer") or "___" in (item.get("question") or ""):
+        return item  # format B or an already-blanked item — nothing to do
+    question = (item.get("question") or "").strip()
+    words = question.split()
+    if len(words) < 4:
+        return None
+    candidates = []
+    for i, raw in enumerate(words[1:], start=1):  # never the capitalised first word
+        w = raw.strip('.,!?;:«»"\'()[]…—–')
+        if len(w) < 5 or not re.fullmatch(r'[a-ząćęłńóśźżA-ZĄĆĘŁŃÓŚŹŻ-]+', w):
+            continue
+        candidates.append((i, w))
+    if not candidates:
+        return None
+    with_diacritics = [c for c in candidates if _PL_DIACRITIC_RE.search(c[1])]
+    idx, word = random.choice(with_diacritics or candidates)
+    words[idx] = words[idx].replace(word, "___", 1)
+    item["question"] = " ".join(words)
+    item["correct_answer"] = word.lower() if word[0].isupper() and idx > 0 else word
+    wh = item.get("word_hints")
+    if isinstance(wh, dict):
+        item["word_hints"] = {k: v for k, v in wh.items()
+                              if not _stem_match(_strip(k.lower()), _strip(word.lower()))} or None
+    return item
 
 
 def _stem_leak(question: str, correct_norm: str) -> bool:

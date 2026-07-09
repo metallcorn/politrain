@@ -415,13 +415,14 @@ LETTER_TILES_PROMPT = (
     + _EXERCISE_COMMON_RULES + "\n\n"
     "Generate {count} letter_tiles exercises.\n"
     "The user assembles a word from shuffled letter tiles. Two valid formats — mix both:\n\n"
-    "FORMAT A — a word in sentence context:\n"
-    "- question: a Polish sentence with ONE ___ (blank)\n"
-    "- correct_answer: one Polish word — the correct form for this context\n"
-    "- The answer is NOT present in question in any form\n"
-    "- hint: grammatical category without the answer itself (e.g. \"biernik od herbata\")\n"
-    "- translation: the full sentence in {native_language} with the word itself in place of ___ (not a spoiler — the letters are already visible)\n"
-    "- word_hints: MANDATORY — every meaningful Polish word of the sentence (except the answer) → {native_language}.\n"
+    "FORMAT A — a full sentence (the app itself picks which word to blank out):\n"
+    "- question: a COMPLETE natural Polish sentence of 6-12 words, NO ___ and NO letter lists.\n"
+    "  Include at least one interesting word of 5+ letters (ideally with diacritics ą ę ó ś ć ź ż ń ł)\n"
+    "- correct_answer: null — the app removes a word itself, so the sentence, translation and\n"
+    "  hints always stay consistent\n"
+    "- hint: null\n"
+    "- translation: the full sentence in {native_language}\n"
+    "- word_hints: MANDATORY — every meaningful Polish word of the sentence → {native_language}.\n"
     "  A format-A item without word_hints will be DISCARDED by the validator — the user cannot understand the sentence.\n\n"
     "FORMAT B — pure spelling:\n"
     "- question: an instruction meaning 'Write in Polish: [word in {native_language}]' — the instruction itself is written in {native_language}, WITHOUT ___\n"
@@ -441,7 +442,7 @@ LETTER_TILES_PROMPT = (
     "Answer ONLY with a valid JSON array, no markdown. Example translation/explanation/word_hints/question-instruction "
     "values are shown in English — you MUST write them in {native_language}:\n"
     "[\n"
-    '  {{"type": "letter_tiles", "question": "Lubię pić ___ rano.", "correct_answer": "kawę", "options": null, "hint": "biernik od kawa", "explanation": "After lubię pić — biernik: kawa → kawę", "translation": "I like drinking coffee in the morning.", "word_hints": {{"lubię": "I like", "pić": "to drink", "rano": "in the morning"}}}},\n'
+    '  {{"type": "letter_tiles", "question": "Lubię pić gorącą kawę rano.", "correct_answer": null, "options": null, "hint": null, "explanation": "After lubię pić — biernik", "translation": "I like drinking hot coffee in the morning.", "word_hints": {{"lubię": "I like", "pić": "to drink", "gorącą": "hot", "kawę": "coffee", "rano": "in the morning"}}}},\n'
     '  {{"type": "letter_tiles", "question": "Write in Polish: happiness", "correct_answer": "szczęście", "options": null, "hint": "sz... — a feeling", "explanation": "szczęście — one of the hardest words to spell: sz+cz+ę", "translation": null, "word_hints": null}}\n'
     "]"
 )

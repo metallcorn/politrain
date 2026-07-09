@@ -1305,15 +1305,31 @@ def session_rating(
     current_user: models.User = Depends(get_current_user),
 ):
     import json as _json
-    db.add(models.SessionRating(
+    # The star click submits immediately (feedback #117: users don't notice the send
+    # button, ratings were lost); a follow-up with rating_id updates the same row
+    # instead of creating a duplicate.
+    if data.rating_id:
+        row = db.query(models.SessionRating).filter(
+            models.SessionRating.id == data.rating_id,
+            models.SessionRating.user_id == current_user.id,
+        ).first()
+        if row:
+            if data.rating is not None:
+                row.rating = data.rating
+            if data.comment:
+                row.comment = data.comment
+            db.commit()
+            return {"ok": True, "rating_id": row.id}
+    row = models.SessionRating(
         user_id=current_user.id,
         mode=data.mode,
         rating=data.rating,
         comment=data.comment or None,
         exercise_ids=_json.dumps(data.exercise_ids) if data.exercise_ids else None,
-    ))
+    )
+    db.add(row)
     db.commit()
-    return {"ok": True}
+    return {"ok": True, "rating_id": row.id}
 
 
 async def _check_translation(user_answer: str, correct_answer: str, question: str, user) -> bool:

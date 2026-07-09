@@ -13,7 +13,6 @@ export default function SessionResult({ correct, total, xpEarned, streak, mode, 
   const [hoverRating, setHoverRating] = useState(0)
   const [comment, setComment] = useState('')
   const [ratingSubmitted, setRatingSubmitted] = useState(false)
-  const autoSubmitTimer = useRef(null)
   // Daily XP goal ring: XP is awarded per answer, so dashboard already includes
   // this session — before = xp_today - xpEarned, no backend change needed
   const [dailyXp, setDailyXp] = useState(null)
@@ -40,33 +39,35 @@ export default function SessionResult({ correct, total, xpEarned, streak, mode, 
   // already done before this session it moves to a compact spot at the bottom
   const goalWasDoneBefore = dailyXp && dailyXp.before >= dailyXp.goal
 
-  const submitRating = (stars, text) => {
-    if (ratingSubmitted) return
-    clearTimeout(autoSubmitTimer.current)
-    setRatingSubmitted(true)
+  // The star click submits IMMEDIATELY (feedback #117: users didn't notice the send
+  // button and ratings were lost). The backend returns rating_id; a later comment (or a
+  // changed star) updates the same row via rating_id instead of creating a duplicate.
+  const ratingIdRef = useRef(null)
+
+  const sendRating = (stars, text) => {
     trainingApi.sessionRating({
       mode,
       rating: stars || null,
       comment: text || null,
       exercise_ids: exerciseIds || [],
+      rating_id: ratingIdRef.current,
+    }).then(res => {
+      if (res.data?.rating_id) ratingIdRef.current = res.data.rating_id
     }).catch(() => {})
   }
 
   const handleStarClick = (stars) => {
     setRating(stars)
-    // Auto-submit after 10s — cancelled if user starts typing a comment
-    clearTimeout(autoSubmitTimer.current)
-    autoSubmitTimer.current = setTimeout(() => submitRating(stars, ''), 10000)
+    sendRating(stars, comment)
   }
 
   const handleCommentChange = (e) => {
     setComment(e.target.value)
-    clearTimeout(autoSubmitTimer.current) // typing cancels auto-submit
   }
 
   const handleCommentSubmit = () => {
-    clearTimeout(autoSubmitTimer.current)
-    submitRating(rating, comment)
+    sendRating(rating, comment)
+    setRatingSubmitted(true)
   }
 
   const formatDuration = (seconds) => {
@@ -158,6 +159,7 @@ export default function SessionResult({ correct, total, xpEarned, streak, mode, 
         </div>
         {rating > 0 && !ratingSubmitted && (
           <div className="w-full flex flex-col gap-2 animate-fade-in">
+            <p className="text-xs text-gray-400">Оценка сохранена — можно добавить комментарий</p>
             <textarea
               className="input resize-none h-16 text-sm"
               placeholder="Комментарий (необязательно)..."
