@@ -437,6 +437,33 @@ class TestFixTranslate:
         assert out["correct_answer"] == "Pojechałabym na wakacje."
 
 
+class TestLetterTilesQuality:
+    def test_letter_enumeration_in_question_rejected(self):
+        # report #242: "(ułóż z liter: a, d, y, n, o, w, a, r, z)" duplicates the tile UI and leaks the answer
+        item = {"type": "letter_tiles",
+                "question": "Wczoraj kupiłam nową ___ do mieszkania. (ułóż z liter: a, d, y, n, o, w, a, r, z)",
+                "correct_answer": "narodową"}
+        assert _fix_letter_tiles_exercise(item) is None
+
+    def test_format_b_inflected_answer_rejected(self):
+        # report #241: format B has no sentence context — a case form (marchewką) is meaningless
+        item = {"type": "letter_tiles", "question": "Напиши по-польски: морковь",
+                "correct_answer": "marchewką"}
+        assert _fix_letter_tiles_exercise(item) is None
+
+    def test_format_b_dictionary_form_ok(self):
+        item = {"type": "letter_tiles", "question": "Напиши по-польски: морковь",
+                "correct_answer": "marchewka"}
+        assert _fix_letter_tiles_exercise(item) is not None
+
+    def test_prescribed_hint_format_kept(self):
+        # 'biernik od kawa' is the documented hint format — tiles show the letters anyway
+        item = {"type": "letter_tiles", "question": "Lubię pić ___ rano.",
+                "correct_answer": "kawę", "hint": "biernik od kawa"}
+        out = _fix_letter_tiles_exercise(item)
+        assert out is not None and out["hint"] == "biernik od kawa"
+
+
 class TestStemLeak:
     def test_letter_tiles_inflected_answer_in_question_rejected(self):
         # review 2026-07: 'na ___ rowerem' with answer 'rowerze' — target word already visible

@@ -397,6 +397,16 @@ def _fix_letter_tiles_exercise(item: dict) -> dict | None:
     blank_count = question.count("___")
     if blank_count > 1:
         return None  # multiple blanks not supported
+    # Letters enumerated inside the question ("ułóż z liter: a, d, y, ...") — the UI already
+    # shows the tiles; the enumeration both duplicates it and leaks the answer (#242)
+    if re.search(r'z liter', question, re.IGNORECASE) or \
+       re.search(r'\((?:\s*[a-ząćęłńóśźż]\s*,){3,}', question, re.IGNORECASE):
+        return None
+    # Format B (no ___) has NO sentence context — the answer must be a dictionary form.
+    # Polish lemmas virtually never end in -ą; that ending marks an inflected case form
+    # ("Напиши по-польски: морковь" → marchewką, #241)
+    if blank_count == 0 and correct.lower().endswith("ą"):
+        return None
     c_norm = _strip(correct)
     q_norm = _strip(question)
     if re.search(r'\b' + re.escape(c_norm) + r'\b', q_norm):
