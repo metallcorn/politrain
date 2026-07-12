@@ -1398,7 +1398,7 @@ async def _generate_daily_pool_inner(user, db: Session, today, count: int):
     # Pool-first: serve unseen exercises from shared pool, generate only the deficit
     pool_drawn = _pool_draw(db, user.id, user.level, ai_target,
                             seen_norms=_seen_questions(user.id, db, limit=400),
-                            seen_skeletons=set(_seen_skeletons(user.id, db, limit=600)),
+                            seen_skeletons={sk for sk, n in _seen_skeletons(user.id, db, limit=600).items() if n >= 2},  # only WORN templates (2+); banning every once-seen skeleton left pool_draw with 0 of 423
                             seen_answers=_seen_answers(user.id, db))
     pool_ai_added = 0
     for pool_ex in pool_drawn:
@@ -1427,7 +1427,10 @@ async def _generate_daily_pool_inner(user, db: Session, today, count: int):
     topic_d_entries = []
     if deficit > 0:
         generated, topic_d_entries = await asyncio.gather(
-            _generate_exercises(user, deficit, interest_themes_str, topics=gen_topics or None, db=db),
+            # Overshoot ~1.5x: validators/dedups reject 30-50% of raw items; generating
+            # exactly `deficit` left sessions short (11/20) once the pool ran dry for the
+            # user (he had seen 420 of 423 entries). Extras all land in the pool anyway.
+            _generate_exercises(user, deficit + max(4, deficit // 2), interest_themes_str, topics=gen_topics or None, db=db),
             _generate_topic_exercises_for_daily(user, db, today),
         )
         seen_qs = _seen_questions(user.id, db, limit=400)  # ~4 days at the user's real pace
@@ -1551,7 +1554,7 @@ async def _generate_bonus_pool_inner(user, db: Session, today, count: int):
     # Pool-first: serve unseen bonus exercises from shared pool at challenge level
     pool_drawn = _pool_draw(db, user.id, challenge_level, count,
                             seen_norms=_seen_questions(user.id, db, limit=400),
-                            seen_skeletons=set(_seen_skeletons(user.id, db, limit=600)),
+                            seen_skeletons={sk for sk, n in _seen_skeletons(user.id, db, limit=600).items() if n >= 2},  # only WORN templates (2+); banning every once-seen skeleton left pool_draw with 0 of 423
                             seen_answers=_seen_answers(user.id, db))
     pool_added = 0
     for pool_ex in pool_drawn:
@@ -1577,7 +1580,8 @@ async def _generate_bonus_pool_inner(user, db: Session, today, count: int):
     print(f"[bonus_pool] user={user.id} level={challenge_level} count={count} pool={pool_added} deficit={deficit}")
 
     if deficit > 0:
-        generated = await _generate_exercises(user, deficit, interest_themes_str, level=challenge_level, topics=gen_topics or None, db=db)
+        # Overshoot ~1.5x — see the daily-pool comment: raw rejects made sessions short
+        generated = await _generate_exercises(user, deficit + max(4, deficit // 2), interest_themes_str, level=challenge_level, topics=gen_topics or None, db=db)
         seen_qs = _seen_questions(user.id, db, limit=400)  # ~4 days at the user's real pace
         seen_tokens = [set(q.split()) for q in seen_qs]
         skeletons = _seen_skeletons(user.id, db, limit=400)  # Counter of opening-construction templates
