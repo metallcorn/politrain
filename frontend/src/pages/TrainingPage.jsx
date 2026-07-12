@@ -111,10 +111,10 @@ export default function TrainingPage() {
       disabled: false,
       icon: <RefreshCw size={28} className="text-teal-500" />,
       title: 'Повторение',
-      description: 'Случайная подборка пройденного материала — без лимита в день',
-      count: 'Закрепи пройденное',
+      description: 'Очередь повторения по расписанию — пройдено, значит вычеркнуто',
+      count: stats?.practice_due > 0 ? `${stats.practice_due} к повторению` : 'Всё повторено ✅',
       color: 'border-teal-100 hover:border-teal-300',
-      badge: null,
+      badge: stats?.practice_due > 0 ? stats.practice_due : null,
     },
     {
       mode: 'theme',

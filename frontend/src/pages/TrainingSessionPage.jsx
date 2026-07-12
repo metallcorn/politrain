@@ -451,7 +451,9 @@ export default function TrainingSessionPage() {
             : currentEx?.source === 'topic' ? '📖 Тема'
             : currentEx?.source === 'review_ai' ? '🔄 Повторение AI'
             : currentEx?.source === 'practice' ? '🔁 Практика'
-            : '🔄 Повторение'}
+            : currentEx?.source === 'review' ? '🔄 Повторение'
+            : currentEx?.source?.startsWith('error') ? '⚠️ Ошибка'
+            : '📝 Задание'}
         </span>
         {currentEx?.topic_title && (
           <span className="normal-case text-gray-300">· {currentEx.topic_title}</span>

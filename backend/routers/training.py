@@ -254,37 +254,13 @@ async def get_training_session(
             except Exception:
                 pass
 
-        # Fallback to DB if Mistral failed
-        if len(exercises) < count:
-            already_seen = {
-                h.exercise_id for h in db.query(models.UserExerciseHistory).filter(
-                    models.UserExerciseHistory.user_id == current_user.id
-                ).limit(200).all() if h.exercise_id
-            }
-            need = count - len(exercises)
-            db_exercises = db.query(models.Exercise).filter(
-                models.Exercise.level == current_user.level,
-                models.Exercise.is_flagged == False,
-                models.Exercise.id.notin_(already_seen),
-            ).limit(need).all()
-            # If all level exercises have been seen, allow repeats (but still exclude flagged)
-            if not db_exercises:
-                db_exercises = db.query(models.Exercise).filter(
-                    models.Exercise.level == current_user.level,
-                    models.Exercise.is_flagged == False,
-                ).limit(need).all()
-            for ex in db_exercises:
-                opts = None
-                if ex.options:
-                    try:
-                        opts = json.loads(ex.options)
-                    except Exception:
-                        pass
-                exercises.append({
-                    "id": ex.id, "type": ex.type, "question": ex.question,
-                    "correct_answer": ex.correct_answer, "options": opts,
-                    "hint": ex.hint, "explanation": ex.explanation, "source": "db",
-                })
+        # NO curriculum top-up here. The old "Fallback to DB" block padded every resumed
+        # bonus tail with exercises from the ~50-row curriculum table: its seen-filter read
+        # 200 UNORDERED history rows (= the oldest), everything counted as unseen was not,
+        # and the "allow repeats" branch then cycled the SAME first-N exercises of the level
+        # forever — 'буква ц' was answered 20 times, 'Widzę ten pies' 15 (feedback #141-144).
+        # A shorter session is strictly better than eternal reruns; real deficits are already
+        # topped up from the shared pool inside _generate_bonus_pool.
 
     elif mode == "vocab":
         # Resume today's uncompleted vocab session if it exists
@@ -538,20 +514,20 @@ async def get_training_session(
                 pass
 
     elif mode == "practice":
-        # Review/consolidation: ONLY correctly answered AI exercises from past 60 days.
-        # Incorrectly answered exercises stay in errors mode until fixed there.
-        # No daily limit — can be done multiple times.
-        cutoff = datetime.utcnow() - timedelta(days=60)
-        completed_ai = db.query(models.DailyExercise).filter(
+        # SRS review queue (user decision 2026-07-12): serve ONLY exercises whose
+        # next_review is due, oldest first — the queue visibly SHRINKS as you work it,
+        # exactly like the errors list, and refills on schedule. The old mode was a
+        # bottomless random mix of everything done in 60 days ("никогда не уменьшается").
+        due = db.query(models.DailyExercise).filter(
             models.DailyExercise.user_id == current_user.id,
             models.DailyExercise.is_completed == True,
             models.DailyExercise.is_correct == True,
+            models.DailyExercise.next_review.isnot(None),
+            models.DailyExercise.next_review <= today,
             models.DailyExercise.source.in_(["new", "bonus", "review_ai", "topic_d"]),
-            models.DailyExercise.content.isnot(None),
-            models.DailyExercise.completed_at >= cutoff,
-        ).order_by(func.random()).limit(count).all()
+        ).order_by(models.DailyExercise.next_review).limit(count).all()
 
-        for de in completed_ai:
+        for de in due:
             try:
                 content = json.loads(de.content)
                 content["daily_exercise_id"] = de.id
@@ -560,52 +536,7 @@ async def get_training_session(
                 exercises.append(content)
             except Exception:
                 pass
-
-        # Also include curriculum exercises answered correctly at least once (not errors, not mastered)
-        mastered_ids = _mastered_exercise_ids(current_user.id, db)
-        latest_sq2 = (
-            db.query(
-                models.UserExerciseHistory.exercise_id,
-                func.max(models.UserExerciseHistory.created_at).label("last_at"),
-            )
-            .filter(
-                models.UserExerciseHistory.user_id == current_user.id,
-                models.UserExerciseHistory.exercise_id.isnot(None),
-            )
-            .group_by(models.UserExerciseHistory.exercise_id)
-            .subquery()
-        )
-        correct_hist = (
-            db.query(models.UserExerciseHistory)
-            .join(latest_sq2, (models.UserExerciseHistory.exercise_id == latest_sq2.c.exercise_id)
-                  & (models.UserExerciseHistory.created_at == latest_sq2.c.last_at))
-            .join(models.Exercise, models.UserExerciseHistory.exercise_id == models.Exercise.id)
-            .filter(
-                models.UserExerciseHistory.user_id == current_user.id,
-                models.UserExerciseHistory.is_correct == True,
-                models.Exercise.is_flagged == False,
-                ~models.Exercise.id.in_(mastered_ids) if mastered_ids else True,
-            )
-            .order_by(func.random())
-            .limit(5).all()
-        )
-        for h in correct_hist:
-            ex = db.query(models.Exercise).filter(models.Exercise.id == h.exercise_id).first()
-            if ex:
-                opts = None
-                if ex.options:
-                    try:
-                        opts = json.loads(ex.options)
-                    except Exception:
-                        pass
-                exercises.append({
-                    "id": ex.id, "type": ex.type, "question": ex.question,
-                    "correct_answer": ex.correct_answer, "options": opts,
-                    "hint": ex.hint, "explanation": ex.explanation, "source": "practice",
-                })
-
         random.shuffle(exercises)
-        exercises = exercises[:count]
 
     else:
         # Daily mode: exclude bonus, vocab, topic, and practice DailyExercises
@@ -720,7 +651,6 @@ async def submit_answer(
                                 content.get("translation", ""), current_user
                             )
 
-                prev_correct = de.is_correct  # before overwrite — an error being corrected is an SRS signal
                 de.is_completed = True
                 de.is_correct = is_correct
                 de.user_answer = body.user_answer
@@ -732,26 +662,24 @@ async def submit_answer(
                 elif ex_type in ("flashcard", "letter_tiles") and content.get("vocab_id"):
                     _vocab_mode = "reduced"   # SRS vocab in daily review — easier than exercises
 
-                # SRS scheduling for AI exercises. Only items with a SIGNAL are scheduled:
-                # a diacritic slip, an error being corrected, or an item already in the SRS
-                # chain (review_ai). Scheduling EVERY correct answer flooded the queue —
-                # 724 overdue at 3 served/day vs ~30 scheduled/day (feedback #138).
-                if de.source in ("new", "bonus", "review_ai"):
+                # SRS scheduling for AI exercises (user decision 2026-07-12: «Повторение»
+                # works like the errors list — a real SRS queue). Every correct answer is
+                # scheduled; the queue is drained by mode=practice (full sessions of due
+                # items, oldest first), not by a 3/day trickle, so it shrinks visibly.
+                # A repeat pass through practice re-answers the SAME row → intervals grow
+                # 1d → 6d → exponentially, so mature items leave the daily flow.
+                if de.source in ("new", "bonus", "review_ai", "topic_d"):
                     if is_correct:
-                        needs_srs = bool(diacritic_hint) or de.source == "review_ai" or prev_correct is False
-                        if needs_srs:
-                            quality = 3 if diacritic_hint else 5
-                            _, new_interval, new_reps, next_rev = calculate_next_review(
-                                2.5,
-                                max(1, de.srs_interval_days or 1),
-                                de.srs_repetitions or 0,
-                                quality,
-                            )
-                            de.srs_interval_days = new_interval
-                            de.srs_repetitions = new_reps
-                            de.next_review = next_rev
-                        else:
-                            de.next_review = None
+                        quality = 3 if diacritic_hint else 5
+                        _, new_interval, new_reps, next_rev = calculate_next_review(
+                            2.5,
+                            max(1, de.srs_interval_days or 1),
+                            de.srs_repetitions or 0,
+                            quality,
+                        )
+                        de.srs_interval_days = new_interval
+                        de.srs_repetitions = new_reps
+                        de.next_review = next_rev
                     else:
                         de.srs_interval_days = 0
                         de.srs_repetitions = 0
@@ -1164,6 +1092,14 @@ def training_stats(
         models.DailyExercise.date == today,
         models.DailyExercise.source.notin_(_daily_excl),
     ).count()
+    practice_due = db.query(models.DailyExercise).filter(
+        models.DailyExercise.user_id == current_user.id,
+        models.DailyExercise.is_completed == True,
+        models.DailyExercise.is_correct == True,
+        models.DailyExercise.next_review.isnot(None),
+        models.DailyExercise.next_review <= today,
+        models.DailyExercise.source.in_(["new", "bonus", "review_ai", "topic_d"]),
+    ).count()
     return {
         "total_exercises": total,
         "correct": correct,
@@ -1171,6 +1107,7 @@ def training_stats(
         "accuracy": round(correct / total * 100, 1) if total > 0 else 0,
         "today_done": daily_done,
         "today_total": daily_total,
+        "practice_due": practice_due,
     }
 
 
