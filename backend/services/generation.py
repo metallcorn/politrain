@@ -1430,7 +1430,7 @@ async def _generate_daily_pool_inner(user, db: Session, today, count: int):
             # Overshoot ~1.5x: validators/dedups reject 30-50% of raw items; generating
             # exactly `deficit` left sessions short (11/20) once the pool ran dry for the
             # user (he had seen 420 of 423 entries). Extras all land in the pool anyway.
-            _generate_exercises(user, deficit + max(4, deficit // 2), interest_themes_str, topics=gen_topics or None, db=db),
+            _generate_exercises(user, min(deficit * 2, deficit + 16), interest_themes_str, topics=gen_topics or None, db=db),
             _generate_topic_exercises_for_daily(user, db, today),
         )
         seen_qs = _seen_questions(user.id, db, limit=400)  # ~4 days at the user's real pace
@@ -1496,10 +1496,14 @@ async def _generate_daily_pool_inner(user, db: Session, today, count: int):
         for item in validated:
             topic_id = topic_id_by_slug.get(item.get("topic_slug"))
             _save_to_pool(item, user.level, topic_id, db)
-        # Add only up to deficit exercises to today's DailyExercise
+        # Fill to the FULL session. The fixed 6-slot reserve (4 topic_d + 2 new-vocab)
+        # burned empty when topic_d yielded nothing and vocab cards don't count toward
+        # the visible session length — the user got 14/20 (#145). Reclaim unused slots
+        # from the already-generated surplus (no extra API calls).
+        allowed = deficit + max(0, 4 - len(topic_d_entries)) + 2
         ai_added = 0
         for item in validated:
-            if ai_added >= deficit:
+            if ai_added >= allowed:
                 break
             topic_id = topic_id_by_slug.get(item.get("topic_slug"))
             pool_id = _save_to_pool(item, user.level, topic_id, db)
@@ -1581,7 +1585,7 @@ async def _generate_bonus_pool_inner(user, db: Session, today, count: int):
 
     if deficit > 0:
         # Overshoot ~1.5x — see the daily-pool comment: raw rejects made sessions short
-        generated = await _generate_exercises(user, deficit + max(4, deficit // 2), interest_themes_str, level=challenge_level, topics=gen_topics or None, db=db)
+        generated = await _generate_exercises(user, min(deficit * 2, deficit + 16), interest_themes_str, level=challenge_level, topics=gen_topics or None, db=db)
         seen_qs = _seen_questions(user.id, db, limit=400)  # ~4 days at the user's real pace
         seen_tokens = [set(q.split()) for q in seen_qs]
         skeletons = _seen_skeletons(user.id, db, limit=400)  # Counter of opening-construction templates
