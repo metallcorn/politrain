@@ -478,6 +478,21 @@ class TestLetterTilesQuality:
         assert out is not None and out["hint"] == "biernik od kawa"
 
 
+class TestWordDefinitionShortStem:
+    def test_four_letter_answer_vocative_leak_rejected(self):
+        # report #244: answer 'tata', riddle contains the vocative «tato» — leaked
+        item = {"type": "word_definition",
+                "question": "To jest osoba, która zawsze cię kocha. Mówisz do niej 'tato'.",
+                "correct_answer": "tata"}
+        assert _fix_word_definition_exercise(item) is None
+
+    def test_four_letter_answer_without_leak_ok(self):
+        item = {"type": "word_definition",
+                "question": "Zwierzę domowe, które szczeka i pilnuje domu.",
+                "correct_answer": "pies"}
+        assert _fix_word_definition_exercise(item) is not None
+
+
 class TestTilesify:
     def test_full_sentence_gets_blanked(self):
         # feedback #114: Python picks the word — sentence/answer/translation always consistent

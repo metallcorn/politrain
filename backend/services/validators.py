@@ -593,6 +593,11 @@ def _fix_word_definition_exercise(item: dict) -> dict | None:
     # Check word stem: if answer minus last char appears in question, likely a derivative is used
     if len(c_norm) >= 5 and c_norm[:-1] in q_norm:
         return None
+    # 4-letter answers slipped through the >=5 threshold: answer 'tata' with «Mówisz do
+    # niej 'tato'» in the riddle (#244). Word-boundary prefix match keeps 3-letter stems
+    # from firing on random substrings.
+    if len(c_norm) == 4 and re.search(r'\b' + re.escape(c_norm[:-1]), q_norm):
+        return None
     # Fallback hint: at least first letter if Mistral skipped it
     if not item.get("hint"):
         item["hint"] = correct[0].upper() + "..."
