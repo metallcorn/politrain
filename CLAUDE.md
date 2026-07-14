@@ -15,7 +15,7 @@ AI-тренажёр польского языка. FastAPI + SQLite бэкенд
 - **Frontend**: React 18, Vite, Tailwind CSS, Zustand, Axios (`baseURL: '/api/v1'`)
 - **AI**: Mistral API — `mistral-large-latest` для генерации упражнений (до 7 батчей через asyncio.gather, НО ограничены `_API_SEMAPHORE=3` одновременными вызовами во избежание rate limit; timeout=60с, fallback → small), `mistral-small-latest` только для словаря; каждый вызов логируется в `mistral_call_logs` с токенами, duration и `error_message`
 - **PWA**: `vite-plugin-pwa` + Workbox service worker; иконки из `public/icon.svg` через `@vite-pwa/assets-generator`; HTTPS на `politrain.metallcorn.online` (Let's Encrypt); autoUpdate режим
-- **Деплой**: nginx reverse proxy (`proxy_read_timeout 90s` — обязательно!), uvicorn под **systemd user-сервисом** `politrain` (Restart=always, переживает ребут — Linger=yes); юниты в `deploy/`, установлены в `~/.config/systemd/user/`; лог по-прежнему `/tmp/uvicorn.log`
+- **Деплой**: nginx reverse proxy (`proxy_read_timeout 90s` — обязательно!), uvicorn под **systemd user-сервисом** `politrain` (Restart=always, переживает ребут — Linger=yes); юниты в `deploy/`, установлены в `~/.config/systemd/user/`; лог по-прежнему `/tmp/uvicorn.log`; после КАЖДОГО рестарта — `python3 scripts/smoke.py` (сценарий 21б); `politrain-pool.timer` в 04:30 держит резерв пула (сценарий 21в)
 - **Бэкапы БД**: `politrain-backup.timer` ежедневно в 03:30 → `backend/scripts/backup_db.py` (online backup API + integrity_check + gzip) → `~/backups/`, хранится 14 копий
 
 ---
@@ -513,6 +513,27 @@ print(_require_word_hints({'type':'letter_tiles','question':'Lubię pić ___.','
 # Ожидаем: True / True / True
 # Дрилл идиом: word_hints обязательны для fill_blank И letter_tiles, topic_title='Идиомы',
 # в mistral_call_logs purpose='idiom_drill'
+```
+
+### 21б. Смоук после рестарта (ОБЯЗАТЕЛЬНО вместо ручных проверок)
+```bash
+cd /home/politrain/politrain_code/backend && python3 scripts/smoke.py
+# СИСТЕМНЫЙ python3 (в venv нет PyJWT). Exit 1 = FAIL, деплой не считается успешным.
+# Проверяет: health, поля stats, НЕВИДЕННЫЙ юзером резерв пула по уровням (≥20 warn),
+# полноту последних bonus-батчей (≥15), сбои Mistral за 24ч, открытые отчёты/фидбэки.
+# Пассивный: НЕ создаёт сессий и НЕ дёргает Mistral — можно гонять после каждого рестарта.
+```
+
+### 21в. Ночное пополнение пула + лог отбраковки
+```bash
+export XDG_RUNTIME_DIR=/run/user/$(id -u)
+systemctl --user list-timers politrain-pool.timer --no-pager   # NEXT = 04:30
+# Ручной прогон (долгий, до 10 мин — НЕ в интерактивной команде, только в фоне):
+# cd backend && env $(cat ../.env|grep -v '^#'|xargs) venv/bin/python3 scripts/replenish_pool.py
+# Держит резерв НЕвиденных юзером записей ≥40 на (юзер × уровень+next_level), до 3 раундов за ночь.
+# Лог отбраковки в каждом батче (uvicorn.log / journal):
+#   [validate:daily|bonus|replenish:X] raw=24 kept=12 rejected={'skeleton':3,'duplicate':7,...}
+# Если kept/raw < 40% стабильно — какой-то фильтр перетянут, смотреть top-причину в rejected.
 ```
 
 ### 22. systemd-сервис и бэкапы БД

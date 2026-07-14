@@ -277,6 +277,88 @@ def _seen_skeletons(user_id: int, db: Session, limit: int = 80) -> Counter:
 # of how the riddle/sentence around it is worded.
 _ANSWER_DEDUP_TYPES = {"word_definition", "flashcard", "letter_tiles"}
 
+_SKELETON_MAX = 2  # allow a construction at most twice before it feels like a drill
+
+_FIXER_CHAIN = (
+    ("type", _validate_type),
+    ("mc", _fix_mc_exercise),
+    ("fill_blank", _fix_fill_blank_exercise),
+    ("tilesify", _tilesify),
+    ("letter_tiles", _fix_letter_tiles_exercise),
+    ("order_words", _fix_order_words_exercise),
+    ("flashcard", _fix_flashcard_exercise),
+    ("translate", _fix_translate_exercise),
+    ("judge", _fix_judge_sentence_exercise),
+    ("word_def", _fix_word_definition_exercise),
+)
+
+
+def _validate_batch(items: list, user, db: Session, *, pool_drawn=(), label: str = "") -> list:
+    """The single validation+dedup pipeline for freshly generated exercises. Was copy-pasted
+    in 3 places (daily/bonus/drill) and drifted. Logs the per-reason rejection breakdown -
+    silent filtering is how the skeleton over-ban zeroed the pool and sessions shrank to
+    11/20 without anyone noticing (feedback #145/#146)."""
+    seen_qs = _seen_questions(user.id, db, limit=400)   # ~4 days at the user's real pace
+    seen_tokens = [set(q.split()) for q in seen_qs]
+    skeletons = _seen_skeletons(user.id, db, limit=400)
+    answers = _seen_answers(user.id, db)
+    # Items just drawn from the pool are part of THIS session - without seeding, a freshly
+    # generated twin of a drawn question passed seen_qs and the same phrase appeared twice.
+    for pool_ex in pool_drawn:
+        try:
+            d0 = json.loads(pool_ex.content)
+        except Exception:
+            continue
+        qn0 = _norm(d0.get("question", ""))
+        if qn0:
+            seen_qs.add(qn0); seen_tokens.append(set(qn0.split()))
+        sk0 = _question_skeleton(d0.get("question", ""))
+        if sk0:
+            skeletons[sk0] += 1
+        if d0.get("type") in _ANSWER_DEDUP_TYPES:
+            a0 = _strip((d0.get("correct_answer") or "")).rstrip('.?!,;')
+            if a0:
+                answers.add(a0)
+    validated = []
+    rejects = Counter()
+    for item in items:
+        for name, fn in _FIXER_CHAIN:
+            item = fn(item)
+            if item is None:
+                rejects[name] += 1
+                break
+        if item is None:
+            continue
+        item = _sanitize_native_fields(item, user.native_language)
+        item = _clean_word_hints(item)
+        item = _require_word_hints(item)
+        if item is None:
+            rejects["hints"] += 1
+            continue
+        qn = _norm(item.get("question", ""))
+        if qn in seen_qs or _too_similar(qn, seen_tokens):
+            rejects["duplicate"] += 1
+            continue
+        sk = _question_skeleton(item.get("question", ""))
+        if sk and skeletons[sk] >= _SKELETON_MAX:
+            rejects["skeleton"] += 1
+            continue
+        ans = None
+        if item.get("type") in _ANSWER_DEDUP_TYPES:
+            ans = _strip((item.get("correct_answer") or "")).rstrip('.?!,;')
+            if ans and ans in answers:
+                rejects["answer"] += 1
+                continue
+        if sk:
+            skeletons[sk] += 1
+        if ans:
+            answers.add(ans)
+        seen_qs.add(qn); seen_tokens.append(set(qn.split()))
+        validated.append(item)
+    if label:
+        print(f"[validate:{label}] raw={len(items)} kept={len(validated)} rejected={dict(rejects)}")
+    return validated
+
 def _seen_answers(user_id: int, db: Session, limit: int = 1500) -> set:
     """Normalized answer words the user recently saw for answer-centric types, so generation
     and pool draws don't keep serving the same target word with a reworded clue (#230/#234).
@@ -1433,65 +1515,7 @@ async def _generate_daily_pool_inner(user, db: Session, today, count: int):
             _generate_exercises(user, min(deficit * 2, deficit + 16), interest_themes_str, topics=gen_topics or None, db=db),
             _generate_topic_exercises_for_daily(user, db, today),
         )
-        seen_qs = _seen_questions(user.id, db, limit=400)  # ~4 days at the user's real pace
-        seen_tokens = [set(q.split()) for q in seen_qs]
-        skeletons = _seen_skeletons(user.id, db, limit=400)  # Counter of opening-construction templates
-        answers = _seen_answers(user.id, db)      # answer words already seen (word_def/flashcard)
-        # Seed with the items just drawn from the pool — they're part of THIS session;
-        # seen_qs covers only COMPLETED exercises, so a freshly generated twin of a drawn
-        # question slipped through and the same phrase appeared twice in one session.
-        for pool_ex in pool_drawn:
-            try:
-                d0 = json.loads(pool_ex.content)
-            except Exception:
-                continue
-            qn0 = _norm(d0.get("question", ""))
-            if qn0:
-                seen_qs.add(qn0); seen_tokens.append(set(qn0.split()))
-            sk0 = _question_skeleton(d0.get("question", ""))
-            if sk0:
-                skeletons[sk0] += 1
-            if d0.get("type") in _ANSWER_DEDUP_TYPES:
-                a0 = _strip((d0.get("correct_answer") or "")).rstrip('.?!,;')
-                if a0:
-                    answers.add(a0)
-        _SKELETON_MAX = 2  # allow a construction at most twice before it feels like a drill
-        validated = []
-        for item in generated:
-            item = _validate_type(item)
-            item = _fix_mc_exercise(item) if item else None
-            item = _fix_fill_blank_exercise(item) if item else None
-            item = _tilesify(item) if item else None  # format A: Python picks the blank word (#114)
-            item = _fix_letter_tiles_exercise(item) if item else None
-            item = _fix_order_words_exercise(item) if item else None
-            item = _fix_flashcard_exercise(item) if item else None
-            item = _fix_translate_exercise(item) if item else None
-            item = _fix_judge_sentence_exercise(item) if item else None
-            item = _fix_word_definition_exercise(item) if item else None
-            if item is None:
-                continue
-            item = _sanitize_native_fields(item, user.native_language)
-            item = _clean_word_hints(item)
-            item = _require_word_hints(item)
-            if item is None:
-                continue
-            qn = _norm(item.get("question", ""))
-            if qn in seen_qs or _too_similar(qn, seen_tokens):
-                continue  # exact or near-duplicate ('для мамы' vs 'для моей мамы')
-            sk = _question_skeleton(item.get("question", ""))
-            if sk and skeletons[sk] >= _SKELETON_MAX:
-                continue  # same opening construction seen too often ('Na stole leży ___')
-            ans = None
-            if item.get("type") in _ANSWER_DEDUP_TYPES:
-                ans = _strip((item.get("correct_answer") or "")).rstrip('.?!,;')
-                if ans and ans in answers:
-                    continue  # same target word already learned (drogeria again, #234)
-            if sk:
-                skeletons[sk] += 1
-            if ans:
-                answers.add(ans)
-            seen_qs.add(qn); seen_tokens.append(set(qn.split()))  # dedup within this batch too
-            validated.append(item)
+        validated = _validate_batch(generated, user, db, pool_drawn=pool_drawn, label="daily")
         # Save ALL valid exercises to pool (populates shared pool regardless of deficit)
         for item in validated:
             topic_id = topic_id_by_slug.get(item.get("topic_slug"))
@@ -1586,65 +1610,7 @@ async def _generate_bonus_pool_inner(user, db: Session, today, count: int):
     if deficit > 0:
         # Overshoot ~1.5x — see the daily-pool comment: raw rejects made sessions short
         generated = await _generate_exercises(user, min(deficit * 2, deficit + 16), interest_themes_str, level=challenge_level, topics=gen_topics or None, db=db)
-        seen_qs = _seen_questions(user.id, db, limit=400)  # ~4 days at the user's real pace
-        seen_tokens = [set(q.split()) for q in seen_qs]
-        skeletons = _seen_skeletons(user.id, db, limit=400)  # Counter of opening-construction templates
-        answers = _seen_answers(user.id, db)      # answer words already seen (word_def/flashcard)
-        # Seed with the items just drawn from the pool — they're part of THIS session;
-        # seen_qs covers only COMPLETED exercises, so a freshly generated twin of a drawn
-        # question slipped through and the same phrase appeared twice in one session.
-        for pool_ex in pool_drawn:
-            try:
-                d0 = json.loads(pool_ex.content)
-            except Exception:
-                continue
-            qn0 = _norm(d0.get("question", ""))
-            if qn0:
-                seen_qs.add(qn0); seen_tokens.append(set(qn0.split()))
-            sk0 = _question_skeleton(d0.get("question", ""))
-            if sk0:
-                skeletons[sk0] += 1
-            if d0.get("type") in _ANSWER_DEDUP_TYPES:
-                a0 = _strip((d0.get("correct_answer") or "")).rstrip('.?!,;')
-                if a0:
-                    answers.add(a0)
-        _SKELETON_MAX = 2  # allow a construction at most twice before it feels like a drill
-        validated = []
-        for item in generated:
-            item = _validate_type(item)
-            item = _fix_mc_exercise(item) if item else None
-            item = _fix_fill_blank_exercise(item) if item else None
-            item = _tilesify(item) if item else None  # format A: Python picks the blank word (#114)
-            item = _fix_letter_tiles_exercise(item) if item else None
-            item = _fix_order_words_exercise(item) if item else None
-            item = _fix_flashcard_exercise(item) if item else None
-            item = _fix_translate_exercise(item) if item else None
-            item = _fix_judge_sentence_exercise(item) if item else None
-            item = _fix_word_definition_exercise(item) if item else None
-            if item is None:
-                continue
-            item = _sanitize_native_fields(item, user.native_language)
-            item = _clean_word_hints(item)
-            item = _require_word_hints(item)
-            if item is None:
-                continue
-            qn = _norm(item.get("question", ""))
-            if qn in seen_qs or _too_similar(qn, seen_tokens):
-                continue  # exact or near-duplicate ('для мамы' vs 'для моей мамы')
-            sk = _question_skeleton(item.get("question", ""))
-            if sk and skeletons[sk] >= _SKELETON_MAX:
-                continue  # same opening construction seen too often ('Na stole leży ___')
-            ans = None
-            if item.get("type") in _ANSWER_DEDUP_TYPES:
-                ans = _strip((item.get("correct_answer") or "")).rstrip('.?!,;')
-                if ans and ans in answers:
-                    continue  # same target word already learned (drogeria again, #234)
-            if sk:
-                skeletons[sk] += 1
-            if ans:
-                answers.add(ans)
-            seen_qs.add(qn); seen_tokens.append(set(qn.split()))  # dedup within this batch too
-            validated.append(item)
+        validated = _validate_batch(generated, user, db, pool_drawn=pool_drawn, label="bonus")
         # Save ALL valid exercises to pool (populates shared pool regardless of deficit)
         for item in validated:
             topic_id = topic_id_by_slug.get(item.get("topic_slug"))

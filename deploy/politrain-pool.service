@@ -1,0 +1,10 @@
+[Unit]
+Description=Politrain nightly exercise-pool replenishment (keeps unseen reserve per user)
+
+[Service]
+Type=oneshot
+EnvironmentFile=/home/politrain/politrain_code/.env
+WorkingDirectory=/home/politrain/politrain_code/backend
+ExecStart=/home/politrain/politrain_code/backend/venv/bin/python3 /home/politrain/politrain_code/backend/scripts/replenish_pool.py
+# Mistral calls for several batches can take a while
+TimeoutStartSec=900
