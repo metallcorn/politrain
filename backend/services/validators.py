@@ -308,6 +308,8 @@ def _fix_fill_blank_exercise(item: dict) -> dict | None:
     if has_blank and not answer_leaked:
         if len(correct.split()) == 1 and _stem_leak(question, c_norm):
             return None  # another form of the answer word printed in the question
+        if _translation_names_mismatch(question, correct, item.get("translation") or ""):
+            return None  # translation mentions a name the sentence doesn't have (#245 Kowalski)
         if not _check_modal_has_infinitive(item):
             return None  # modal verb answer but no infinitive in question — incomplete sentence
         return item  # perfect format
@@ -413,6 +415,28 @@ def _tilesify(item: dict) -> dict | None:
     return item
 
 
+_RU_MIDSENTENCE_NAME_RE = re.compile(r'\s([А-ЯЁ][а-яё]{2,})')
+_PL_MIDSENTENCE_NAME_RE = re.compile(r'\s([A-ZĄĆĘŁŃÓŚŹŻ][a-ząćęłńóśźż]+)')
+# Polite forms are capitalised mid-sentence but are not proper names
+_RU_POLITE = {"Вас", "Вам", "Вами", "Ваш", "Ваша", "Ваше", "Ваши"}
+_PL_POLITE = {"Pan", "Pani", "Panie", "Pana", "Panu", "Panem", "Państwo", "Państwa"}
+
+def _translation_names_mismatch(question: str, correct: str, translation: str) -> bool:
+    """True when the native translation mentions a proper name that the Polish sentence
+    doesn't have: «___ , czy mógłby pan pomóc…» translated as «Господин КОВАЛЬСКИЙ, …» —
+    the user typed 'Panie Kowalski' off the translation and was marked wrong (#245).
+    Only fires for Cyrillic translations (proper names can't be string-matched across
+    scripts, so we compare mid-sentence capitalisation presence instead)."""
+    if not translation or not re.search(r'[а-яё]', translation, re.IGNORECASE):
+        return False
+    names = [n for n in _RU_MIDSENTENCE_NAME_RE.findall(translation) if n not in _RU_POLITE]
+    if not names:
+        return False
+    polish_full = f"{question} {correct or ''}"
+    pl_names = [n for n in _PL_MIDSENTENCE_NAME_RE.findall(polish_full) if n not in _PL_POLITE]
+    return not pl_names
+
+
 def _stem_leak(question: str, correct_norm: str) -> bool:
     """True when a word sharing the answer's stem is already printed in the question
     OUTSIDE parentheses: 'na ___ rowerem' with answer 'rowerze' shows the target word in
@@ -460,6 +484,8 @@ def _fix_letter_tiles_exercise(item: dict) -> dict | None:
         return None  # answer visible in question
     if _stem_leak(question, c_norm):
         return None  # another form of the answer word printed in the question (rowerze/rowerem)
+    if _translation_names_mismatch(question, correct, item.get("translation") or ""):
+        return None  # translation mentions a name the sentence doesn't have (#245)
     return item
 
 

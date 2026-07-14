@@ -637,7 +637,8 @@ async def submit_answer(
                         is_correct = await _check_translation(
                             body.user_answer, correct_answer,
                             content.get("question", ""),
-                            current_user
+                            current_user,
+                            focus=content.get("topic_title") or content.get("hint") or "",
                         )
                 else:
                     is_correct, diacritic_hint = _check_answer(body.user_answer, correct_answer)
@@ -863,7 +864,8 @@ async def submit_answer(
             if not is_correct:
                 is_correct = await _check_translation(
                     body.user_answer, correct_answer,
-                    exercise.question, current_user
+                    exercise.question, current_user,
+                    focus=exercise.hint or "",
                 )
         else:
             is_correct, diacritic_hint = _check_answer(body.user_answer, correct_answer)
@@ -1283,7 +1285,7 @@ def session_rating(
     return {"ok": True, "rating_id": row.id}
 
 
-async def _check_translation(user_answer: str, correct_answer: str, question: str, user) -> bool:
+async def _check_translation(user_answer: str, correct_answer: str, question: str, user, focus: str = "") -> bool:
     if user_answer.strip().lower() == correct_answer.strip().lower():
         return True
     prompt = prompts.TRANSLATION_CHECK_PROMPT.format(
@@ -1292,6 +1294,7 @@ async def _check_translation(user_answer: str, correct_answer: str, question: st
         source_text=question,
         user_answer=user_answer,
         correct_answer=correct_answer,
+        focus=focus or "general translation",
     )
     # large first; if it fails (429 during generation bursts is common) fall back to small —
     # never silently mark a possibly-correct answer wrong because of an API hiccup

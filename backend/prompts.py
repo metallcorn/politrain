@@ -39,8 +39,13 @@ The user is learning Polish, level {level}.
 Task: translate "{source_text}" from {native_language} into Polish.
 User's answer: "{user_answer}"
 Reference answer: "{correct_answer}"
+The exercise specifically drills: {focus}
 
 MAIN PRINCIPLE: check MEANING and GRAMMAR, not word-for-word identity with the reference.
+EXCEPTION — the drilled construction is NOT optional: if the exercise drills a specific
+construction (e.g. the vocative «Mario, ...», the imperative «pomóż») and the user's answer
+AVOIDS it via a paraphrase («Maria, proszę mi pomóc» instead of «Mario, pomóż mi»), mark it
+false even when the paraphrase is otherwise valid Polish — the tested skill was not shown.
 If the answer conveys the same meaning and is grammatically correct — ACCEPT it, even if it
 uses different words than the reference. The reference is only ONE valid variant, not the only one.
 

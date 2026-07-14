@@ -493,6 +493,37 @@ class TestWordDefinitionShortStem:
         assert _fix_word_definition_exercise(item) is not None
 
 
+class TestTranslationNamesMismatch:
+    def test_kowalski_only_in_translation_rejected(self):
+        # report #245: translation says «Господин Ковальский», the sentence has no name —
+        # the user typed 'Panie Kowalski' off the translation and was marked wrong
+        item = {"type": "fill_blank", "question": "___ , czy mógłby pan pomóc mi z tym dokumentem?",
+                "correct_answer": "Panie",
+                "translation": "Господин Ковальский, не могли бы вы помочь мне с этим документом?"}
+        assert _fix_fill_blank_exercise(item) is None
+
+    def test_name_present_in_polish_ok(self):
+        item = {"type": "fill_blank", "question": "Wczoraj Maria kupiła ___ sukienkę.",
+                "correct_answer": "czerwoną",
+                "translation": "Вчера Мария купила красное платье."}
+        assert _fix_fill_blank_exercise(item) is not None
+
+    def test_polite_vy_not_a_name(self):
+        item = {"type": "fill_blank", "question": "Czy może pan otworzyć ___?",
+                "correct_answer": "okno",
+                "translation": "Не могли бы Вы открыть окно?"}
+        assert _fix_fill_blank_exercise(item) is not None
+
+
+class TestNumeralAnswerDedup:
+    def test_numeral_fill_blank_gets_dedup_key(self):
+        import services.generation as g
+        # #147: 'piątego (5)' resurfaced in ever-new date sentences
+        assert g._answer_dedup_key({"type": "fill_blank", "correct_answer": "piątego"}) is not None
+        assert g._answer_dedup_key({"type": "fill_blank", "correct_answer": "kawę"}) is None
+        assert g._answer_dedup_key({"type": "word_definition", "correct_answer": "kawa"}) is not None
+
+
 class TestTilesify:
     def test_full_sentence_gets_blanked(self):
         # feedback #114: Python picks the word — sentence/answer/translation always consistent

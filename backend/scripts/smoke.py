@@ -51,12 +51,19 @@ def make_token(user_id=2):
 
 
 def main():
-    # 1. health
-    try:
-        h = http_json("/health")
-        check("health", h.get("status") == "healthy")
-    except Exception as e:
-        check("health", False, str(e))
+    # 1. health — retry: startup migrations take a few seconds after a restart
+    import time
+    last_err = None
+    for attempt in range(5):
+        try:
+            h = http_json("/health")
+            check("health", h.get("status") == "healthy")
+            break
+        except Exception as e:
+            last_err = e
+            time.sleep(3)
+    else:
+        check("health", False, str(last_err))
         finish()  # nothing else will work
 
     token = make_token()

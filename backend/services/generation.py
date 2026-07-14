@@ -34,6 +34,7 @@ from services.validators import (
     _fix_word_definition_exercise,
     _too_similar,
     _question_skeleton,
+    _is_numeral_word,
 )
 from services.i18n import lang_name, ui
 
@@ -218,11 +219,9 @@ def _pool_draw(db: Session, user_id: int, level: str, count: int,
         sk = _question_skeleton(d.get("question", "")) if d else ""
         if sk and sk in used_sk:
             continue  # same construction already seen / already drawn this session
-        ans = None
-        if d.get("type") in _ANSWER_DEDUP_TYPES:
-            ans = _strip((d.get("correct_answer") or "")).rstrip('.?!,;')
-            if ans and ans in used_ans:
-                continue  # same target word already seen (drogeria again)
+        ans = _answer_dedup_key(d)
+        if ans and ans in used_ans:
+            continue  # same target word/numeral already seen (drogeria #234, piątego #147)
         if sk:
             used_sk.add(sk)
         if ans:
@@ -277,6 +276,20 @@ def _seen_skeletons(user_id: int, db: Session, limit: int = 80) -> Counter:
 # of how the riddle/sentence around it is worded.
 _ANSWER_DEDUP_TYPES = {"word_definition", "flashcard", "letter_tiles"}
 
+
+def _answer_dedup_key(d: dict):
+    """Normalized answer for dedup, or None. Covers the answer-centric types AND
+    fill_blank with a numeral answer — the same 'piątego (5)' kept coming back in
+    different date sentences (#147: 'числа одни и те же')."""
+    t = d.get("type")
+    ca = d.get("correct_answer") or ""
+    if t in _ANSWER_DEDUP_TYPES or (
+        t == "fill_blank" and any(_is_numeral_word(w) for w in ca.split())
+    ):
+        key = _strip(ca).rstrip('.?!,;')
+        return key or None
+    return None
+
 _SKELETON_MAX = 2  # allow a construction at most twice before it feels like a drill
 
 _FIXER_CHAIN = (
@@ -315,10 +328,9 @@ def _validate_batch(items: list, user, db: Session, *, pool_drawn=(), label: str
         sk0 = _question_skeleton(d0.get("question", ""))
         if sk0:
             skeletons[sk0] += 1
-        if d0.get("type") in _ANSWER_DEDUP_TYPES:
-            a0 = _strip((d0.get("correct_answer") or "")).rstrip('.?!,;')
-            if a0:
-                answers.add(a0)
+        a0 = _answer_dedup_key(d0)
+        if a0:
+            answers.add(a0)
     validated = []
     rejects = Counter()
     for item in items:
@@ -343,12 +355,10 @@ def _validate_batch(items: list, user, db: Session, *, pool_drawn=(), label: str
         if sk and skeletons[sk] >= _SKELETON_MAX:
             rejects["skeleton"] += 1
             continue
-        ans = None
-        if item.get("type") in _ANSWER_DEDUP_TYPES:
-            ans = _strip((item.get("correct_answer") or "")).rstrip('.?!,;')
-            if ans and ans in answers:
-                rejects["answer"] += 1
-                continue
+        ans = _answer_dedup_key(item)
+        if ans and ans in answers:
+            rejects["answer"] += 1
+            continue
         if sk:
             skeletons[sk] += 1
         if ans:
@@ -373,10 +383,9 @@ def _seen_answers(user_id: int, db: Session, limit: int = 1500) -> set:
     for de in rows:
         try:
             d = json.loads(de.content)
-            if d.get("type") in _ANSWER_DEDUP_TYPES:
-                ca = _strip((d.get("correct_answer") or "")).rstrip('.?!,;')
-                if ca:
-                    result.add(ca)
+            ca = _answer_dedup_key(d)
+            if ca:
+                result.add(ca)
         except Exception:
             pass
     return result
