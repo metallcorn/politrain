@@ -22,9 +22,27 @@ from services.generation import (  # noqa: E402
     _select_topics_for_generation, _select_interest_themes, _next_level,
 )
 
-RESERVE_TARGET = 40   # unseen active entries per (user, level) we aim to keep
 BATCH_RAW = 24        # raw items to request per generation round (~14-18 survive)
 MAX_ROUNDS = 3        # per (user, level) per night — cost guard
+MIN_TARGET = 10       # floor so a returning user isn't greeted by an empty pool
+MAX_TARGET = 60       # cost ceiling
+
+
+def _reserve_target(db, user_id: int, level: str) -> int:
+    """2 days' worth of this user's ACTUAL consumption at this level (7-day average).
+    User rule: never generate endlessly — if the unseen reserve already covers ~2 days
+    of real usage, no new exercises are needed."""
+    row = db.execute(
+        __import__("sqlalchemy").text(
+            """SELECT COUNT(*) FROM daily_exercises de
+               JOIN exercise_pool p ON p.id = de.pool_exercise_id
+               WHERE de.user_id = :uid AND p.level = :lvl AND de.is_completed = 1
+                 AND de.completed_at >= datetime('now', '-7 days')"""
+        ), {"uid": user_id, "lvl": level},
+    ).fetchone()
+    weekly = row[0] if row else 0
+    target = round(weekly / 7 * 2)
+    return max(MIN_TARGET, min(MAX_TARGET, target))
 
 
 def _unseen_count(db, user_id: int, level: str) -> int:
@@ -53,12 +71,13 @@ async def replenish():
         for user in users:
             # daily draws at user.level, bonus at the next level — keep both stocked
             for level in {user.level, _next_level(user.level)}:
+                target = _reserve_target(db, user.id, level)
                 for round_no in range(MAX_ROUNDS):
                     unseen = _unseen_count(db, user.id, level)
-                    if unseen >= RESERVE_TARGET:
-                        print(f"[replenish] user={user.id} level={level} reserve={unseen} ok")
+                    if unseen >= target:
+                        print(f"[replenish] user={user.id} level={level} reserve={unseen} >= target={target} (2-day pace) ok")
                         break
-                    print(f"[replenish] user={user.id} level={level} reserve={unseen} < {RESERVE_TARGET} → generating (round {round_no + 1})")
+                    print(f"[replenish] user={user.id} level={level} reserve={unseen} < target={target} → generating (round {round_no + 1})")
                     topics = _select_topics_for_generation(user, db)
                     themes = _select_interest_themes(user.content_preferences)
                     raw = await _generate_exercises(

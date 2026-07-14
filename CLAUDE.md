@@ -530,7 +530,9 @@ export XDG_RUNTIME_DIR=/run/user/$(id -u)
 systemctl --user list-timers politrain-pool.timer --no-pager   # NEXT = 04:30
 # Ручной прогон (долгий, до 10 мин — НЕ в интерактивной команде, только в фоне):
 # cd backend && env $(cat ../.env|grep -v '^#'|xargs) venv/bin/python3 scripts/replenish_pool.py
-# Держит резерв НЕвиденных юзером записей ≥40 на (юзер × уровень+next_level), до 3 раундов за ночь.
+# Цель резерва ДИНАМИЧЕСКАЯ (правило юзера: не генерировать бесконечно): 2 × среднесуточное
+# прохождение ЭТОГО юзера на ЭТОМ уровне за 7 дней (floor 10, cap 60). Запас покрывает ~2 дня
+# реального темпа → генерации нет. До 3 раундов за ночь на (юзер × уровень+next_level).
 # Лог отбраковки в каждом батче (uvicorn.log / journal):
 #   [validate:daily|bonus|replenish:X] raw=24 kept=12 rejected={'skeleton':3,'duplicate':7,...}
 # Если kept/raw < 40% стабильно — какой-то фильтр перетянут, смотреть top-причину в rejected.
