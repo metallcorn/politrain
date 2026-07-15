@@ -352,3 +352,100 @@ def get_mistral_usage(
             ),
         },
     }
+
+
+@router.get("/triage")
+def triage(
+    days: int = 3,
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(require_admin),
+):
+    """Everything needed for a feedback-triage round in ONE call — no more ad-hoc SQL.
+    Open exercise reports (full snapshot + the DE's source/pool/user_answer), open
+    admin feedback, recent session-rating comments, and system vitals."""
+    from datetime import datetime as _dt, timedelta as _td
+
+    reports = []
+    for r in db.query(models.GeneratedExerciseReport).filter(
+        models.GeneratedExerciseReport.is_resolved == False,  # noqa: E712
+    ).order_by(models.GeneratedExerciseReport.id).all():
+        snap = None
+        try:
+            snap = json.loads(r.exercise_snapshot)
+        except Exception:
+            pass
+        de_info = None
+        if r.daily_exercise_id:
+            de = db.query(models.DailyExercise).filter(
+                models.DailyExercise.id == r.daily_exercise_id,
+            ).first()
+            if de:
+                de_info = {
+                    "source": de.source, "pool_exercise_id": de.pool_exercise_id,
+                    "is_correct": de.is_correct, "user_answer": de.user_answer,
+                    "date": str(de.date),
+                }
+        reports.append({
+            "id": r.id, "comment": r.comment, "created_at": str(r.created_at),
+            "daily_exercise_id": r.daily_exercise_id,
+            "exercise": snap, "de": de_info,
+        })
+
+    feedback = [
+        {"id": f.id, "comment": f.comment, "url": f.url,
+         "page_snapshot": (f.page_snapshot or "")[:600], "created_at": str(f.created_at)}
+        for f in db.query(models.AdminFeedback).filter(
+            models.AdminFeedback.is_resolved == False,  # noqa: E712
+        ).order_by(models.AdminFeedback.id).all()
+    ]
+
+    cutoff = _dt.utcnow() - _td(days=days)
+    ratings = [
+        {"id": s.id, "rating": s.rating, "comment": s.comment, "mode": s.mode,
+         "created_at": str(s.created_at)}
+        for s in db.query(models.SessionRating).filter(
+            models.SessionRating.comment.isnot(None),
+            models.SessionRating.comment != "",
+            models.SessionRating.created_at >= cutoff,
+        ).order_by(models.SessionRating.id).all()
+    ]
+
+    mistral_failures = db.query(models.MistralCallLog).filter(
+        models.MistralCallLog.success == False,  # noqa: E712
+        models.MistralCallLog.created_at >= cutoff,
+    ).count()
+    pool_active = db.query(models.ExercisePool).filter(
+        models.ExercisePool.is_active == True,  # noqa: E712
+    ).count()
+
+    return {
+        "open_reports": reports,
+        "open_feedback": feedback,
+        "rating_comments": ratings,
+        "vitals": {
+            "mistral_failures": mistral_failures,
+            "pool_active": pool_active,
+        },
+    }
+
+
+@router.post("/triage/resolve")
+def triage_resolve(
+    body: dict,
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(require_admin),
+):
+    """Close triaged items: {\"reports\": [ids], \"feedback\": [ids]}."""
+    n_r = n_f = 0
+    for rid in body.get("reports") or []:
+        row = db.query(models.GeneratedExerciseReport).filter_by(id=rid).first()
+        if row and not row.is_resolved:
+            row.is_resolved = True
+            n_r += 1
+    for fid in body.get("feedback") or []:
+        row = db.query(models.AdminFeedback).filter_by(id=fid).first()
+        if row and not row.is_resolved:
+            row.is_resolved = True
+            n_f += 1
+    db.commit()
+    return {"reports_resolved": n_r, "feedback_resolved": n_f}

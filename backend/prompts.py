@@ -46,6 +46,10 @@ EXCEPTION — the drilled construction is NOT optional: if the exercise drills a
 construction (e.g. the vocative «Mario, ...», the imperative «pomóż») and the user's answer
 AVOIDS it via a paraphrase («Maria, proszę mi pomóc» instead of «Mario, pomóż mi»), mark it
 false even when the paraphrase is otherwise valid Polish — the tested skill was not shown.
+This exception applies ONLY to the drilled element itself. Synonym swaps OUTSIDE the focus
+stay acceptable: with focus «reflexive się», «Uczę się polskiego codziennie» instead of
+«Uczę się polskiego każdego dnia» is CORRECT — się is present, codziennie is a valid synonym.
+Do not become stricter about anything except the focused construction.
 If the answer conveys the same meaning and is grammatically correct — ACCEPT it, even if it
 uses different words than the reference. The reference is only ONE valid variant, not the only one.
 

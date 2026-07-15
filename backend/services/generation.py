@@ -35,6 +35,7 @@ from services.validators import (
     _too_similar,
     _question_skeleton,
     _is_numeral_word,
+    _dedup_question_key,
 )
 from services.i18n import lang_name, ui
 
@@ -140,7 +141,7 @@ def _build_avoid_block(user_id: int, level: str, db: Session) -> str:
 
 def _save_to_pool(item: dict, level: str, topic_id, db: Session):
     """Save a validated exercise item to the shared pool. Returns pool_exercise_id or None."""
-    q_norm = _norm(item.get("question", ""))
+    q_norm = _dedup_question_key(item)  # order_words keyed by sentence, not the shuffle (#247/#249)
     if not q_norm:
         return None
     existing = db.query(models.ExercisePool).filter(
@@ -242,9 +243,10 @@ def _seen_questions(user_id: int, db: Session, limit: int = 60) -> set:
     result = set()
     for de in rows:
         try:
-            q = json.loads(de.content).get("question", "")
-            if q:
-                result.add(_norm(q))
+            d = json.loads(de.content)
+            key = _dedup_question_key(d)
+            if key:
+                result.add(key)
         except Exception:
             pass
     return result
@@ -347,7 +349,7 @@ def _validate_batch(items: list, user, db: Session, *, pool_drawn=(), label: str
         if item is None:
             rejects["hints"] += 1
             continue
-        qn = _norm(item.get("question", ""))
+        qn = _dedup_question_key(item)
         if qn in seen_qs or _too_similar(qn, seen_tokens):
             rejects["duplicate"] += 1
             continue
@@ -748,7 +750,10 @@ def _select_topics_for_generation(user, db: Session, n: int = 2) -> list:
     fresh = [t for t in candidates if t.id not in recent_ids]
     stale = [t for t in candidates if t.id in recent_ids]
 
-    for pool in (fresh, stale, done_review):
+    # fresh first; then MASTERED topics coming back for spaced review; recently-covered
+    # (stale) topics are the LAST resort — with few non-done topics left, the old order
+    # served vocative/numbers-dates several days in a row (feedback #149/#150)
+    for pool in (fresh, done_review, stale):
         for t in pool:
             if t.id not in used_ids:
                 chosen.append(t)
@@ -1557,6 +1562,37 @@ async def _generate_daily_pool_inner(user, db: Session, today, count: int):
         topic_d_entries = await _generate_topic_exercises_for_daily(user, db, today)
 
     entries.extend(topic_d_entries)
+
+    # Top up to the FULL session from the pool. The reserve slots (topic_d + new vocab)
+    # can go unused even when deficit==0 — pool covered ai_target, topic_d yielded
+    # nothing, vocab cards don't count → 14/20 again (feedback #148). The nightly job
+    # keeps the pool stocked, so this draw is cheap.
+    countable = sum(1 for e in entries if e.source != "vocab")
+    shortfall = count - countable
+    if shortfall > 0:
+        session_norms = set()
+        for e in entries:
+            try:
+                session_norms.add(_dedup_question_key(json.loads(e.content)))
+            except Exception:
+                pass
+        extra = _pool_draw(db, user.id, user.level, shortfall,
+                           seen_norms=_seen_questions(user.id, db, limit=400) | session_norms,
+                           seen_skeletons={sk for sk, n in _seen_skeletons(user.id, db, limit=600).items() if n >= 2},
+                           seen_answers=_seen_answers(user.id, db))
+        for pool_ex in extra:
+            pool_ex.use_count = (pool_ex.use_count or 0) + 1
+            entries.append(models.DailyExercise(
+                user_id=user.id, date=today,
+                exercise_type=pool_ex.exercise_type,
+                content=pool_ex.content,
+                source="new",
+                content_type=pool_ex.content_type,
+                topic_id=pool_ex.topic_id,
+                pool_exercise_id=pool_ex.id,
+            ))
+        if extra:
+            print(f"[daily_pool] topped up {len(extra)} from pool (shortfall was {shortfall})")
 
     for entry in entries:
         db.add(entry)

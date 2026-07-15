@@ -13,9 +13,27 @@ _YO_MAP = str.maketrans('ёЁ', 'еЕ')
 def _strip(text: str) -> str:
     return text.strip().lower().translate(_DIACRITIC_MAP).translate(_YO_MAP)
 
+_INNER_PUNCT_RE = re.compile(r'[.,!?;:…«»"\']')
+
 def _norm(text: str) -> str:
-    """Normalize for comparison: strip whitespace, trailing punctuation, lowercase, remove hyphens."""
-    return text.strip().rstrip('.?!,;').strip().lower().replace('-', '').translate(_YO_MAP)
+    """Normalize for comparison: lowercase, no hyphens, no punctuation ANYWHERE.
+    Was trailing-only — a comma inside the reference («Panie doktorze, proszę…») made the
+    user's identical comma-less answer fail the exact check and fall through to the
+    Mistral lottery (#247/#249, feedback #154)."""
+    text = _INNER_PUNCT_RE.sub('', text)
+    return re.sub(r'\s+', ' ', text).strip().lower().replace('-', '').translate(_YO_MAP)
+
+
+def _dedup_question_key(item: dict) -> str:
+    """Question identity for dedup/pool. For order_words the question is a SHUFFLE — two
+    shuffles of the same sentence got different norms and the same 'Panie doktorze,
+    proszę mi pomóc' was served twice as two pool entries (#247/#249). Key by the
+    sentence (first correct_answer alternative) instead."""
+    if item.get("type") == "order_words":
+        first = (item.get("correct_answer") or "").split(" / ")[0]
+        if first.strip():
+            return _norm(first)
+    return _norm(item.get("question", ""))
 
 
 _VALID_EXERCISE_TYPES = {"fill_blank", "multiple_choice", "flashcard", "translate", "order_words", "judge_sentence", "letter_tiles", "word_definition"}
