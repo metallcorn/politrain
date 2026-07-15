@@ -714,6 +714,12 @@ backend/
 ### Ключевые модели
 - `User` — пользователь, level (A0-B1), xp, streak_days, `best_streak`, `total_training_seconds`
 - `DailyExercise` — задания дня, source:
+  - УНИВЕРСАЛЬНЫЕ ПУЛЫ (решение юзера 2026-07-15): daily и bonus включают ВСЁ — ошибки на исправление
+    (до 3 копий с `content.is_error_retry=true`, бейдж «⚠️ Ошибка» при выдаче; верный ответ чистит
+    оригинал через dupes-clear и уводит в SRS practice; копии исключены из errors-подсчётов по
+    `~content.contains('"is_error_retry"')`), словарные карточки (daily: review+новые; bonus: до 3 due
+    через `_bonus_vocab_entries`), SRS-повторы и новое. Отдельные режимы (errors/vocab/practice) —
+    для целевой прокачки
   - `weak` — curriculum упражнения из слабых тем
   - `new` — AI-сгенерированные новые задания; grammar (fill_blank/mc) и lexical (flashcard/translate/order_words) имеют topic_slug+topic_title в content — тема соответствует содержимому батча; judge/letter_tiles/word_def — глобальные без темы
   - `bonus` — AI-сгенерированные бонусные задания (сверх дневной нормы); аналогично grammar+lexical тегированы, judge/tiles/word_def без темы

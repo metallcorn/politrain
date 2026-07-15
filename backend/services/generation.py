@@ -1259,6 +1259,67 @@ async def _generate_topic_exercises_for_daily(user, db: Session, today) -> list:
     return entries
 
 
+def _error_retry_entries(user, db: Session, today, source: str, limit: int = 3) -> list:
+    """Error-work injected into the general pools (user decision 2026-07-15: daily/bonus
+    include EVERYTHING — errors never shrink if they live only in a mode the user rarely
+    opens). A copy is served; on a correct answer the dupes-clearing block in submit_answer
+    marks the wrong ORIGINAL fixed, and SM2 puts the item into the practice queue."""
+    err_due = db.query(models.DailyExercise).filter(
+        models.DailyExercise.user_id == user.id,
+        models.DailyExercise.is_completed == True,
+        models.DailyExercise.is_correct == False,
+        models.DailyExercise.source.in_(["bonus", "new", "topic", "topic_d", "review_ai"]),
+        models.DailyExercise.completed_at.isnot(None),
+        models.DailyExercise.completed_at >= datetime.utcnow() - timedelta(days=14),
+        ~models.DailyExercise.content.contains('"is_error_retry"'),
+    ).order_by(func.random()).limit(limit).all()
+    out = []
+    for de_err in err_due:
+        try:
+            c_err = json.loads(de_err.content)
+        except Exception:
+            continue
+        c_err["is_error_retry"] = True  # serve-time badge override → '⚠️ Ошибка'
+        out.append(models.DailyExercise(
+            user_id=user.id, date=today, exercise_type=de_err.exercise_type,
+            content=json.dumps(c_err, ensure_ascii=False), source=source,
+            content_type=de_err.content_type, topic_id=de_err.topic_id,
+            pool_exercise_id=de_err.pool_exercise_id,
+        ))
+    return out
+
+
+def _bonus_vocab_entries(user, db: Session, today, limit: int = 3) -> list:
+    """Due vocab cards for the bonus mix (daily already carries them as source='review').
+    Skips words already sitting in today's still-open exercises."""
+    used_vocab_ids = set()
+    for (content,) in db.query(models.DailyExercise.content).filter(
+        models.DailyExercise.user_id == user.id,
+        models.DailyExercise.date == today,
+        models.DailyExercise.is_completed == False,
+    ).all():
+        try:
+            vid = json.loads(content).get("vocab_id")
+            if vid:
+                used_vocab_ids.add(vid)
+        except Exception:
+            pass
+    due = db.query(models.UserVocabulary).filter(
+        models.UserVocabulary.user_id == user.id,
+        models.UserVocabulary.next_review <= today,
+    ).order_by(func.random()).limit(limit * 2).all()
+    out = []
+    for uv in due:
+        if uv.vocab_id in used_vocab_ids or len(out) >= limit:
+            continue
+        card = _vocab_card_content(uv.vocab, "review", user.native_language, uv.correct_streak or 0)
+        out.append(models.DailyExercise(
+            user_id=user.id, date=today, exercise_type=card["type"],
+            content=json.dumps(card, ensure_ascii=False), source="bonus",
+        ))
+    return out
+
+
 # One generation at a time per user. Two concurrent session requests (frontend retry
 # after a slow Mistral call, double tap) both saw an empty batch and both generated —
 # the same pool entries were served twice in one day (feedback #112/#122/#124-127:
@@ -1430,15 +1491,17 @@ async def _generate_daily_pool_inner(user, db: Session, today, count: int):
         models.DailyExercise.source.in_(["new", "bonus", "review_ai"]),
     ).order_by(models.DailyExercise.next_review).limit(3).all()
 
+    error_entries = _error_retry_entries(user, db, today, source="new")
+
     # AI fills whatever is left; reserve ~6 slots for new_vocab(2) and topic_d(~4)
-    ai_target = max(count - len(weak_exs) - len(due_vocab) - len(ai_due) - 6, count // 4)
+    ai_target = max(count - len(weak_exs) - len(due_vocab) - len(ai_due) - len(error_entries) - 6, count // 4)
 
     interest_themes_str = _select_interest_themes(prefs)  # max 2 themes, even rotation
 
     gen_topics = _select_topics_for_generation(user, db)
     topic_id_by_slug = {t.slug: t.id for t in gen_topics}
 
-    entries = []
+    entries = list(error_entries)
 
     for ex in weak_exs:
         opts = None
@@ -1623,6 +1686,14 @@ async def _generate_bonus_pool_inner(user, db: Session, today, count: int):
     challenge_level = _next_level(user.level)
     gen_topics = _select_topics_for_generation(user, db)
     topic_id_by_slug = {t.slug: t.id for t in gen_topics}
+
+    # Universal mix (user decision 2026-07-15): bonus carries error-work and vocab
+    # cards too, not only fresh AI exercises.
+    mix_entries = _error_retry_entries(user, db, today, source="bonus") + \
+        _bonus_vocab_entries(user, db, today)
+    for e in mix_entries:
+        db.add(e)
+    count = max(count - len(mix_entries), count // 2)
 
     # Pool-first: serve unseen bonus exercises from shared pool at challenge level
     pool_drawn = _pool_draw(db, user.id, challenge_level, count,

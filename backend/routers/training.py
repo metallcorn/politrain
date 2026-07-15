@@ -144,6 +144,7 @@ async def get_training_session(
                     models.DailyExercise.is_completed == True,
                     models.DailyExercise.is_correct == False,
                     models.DailyExercise.source.in_(["bonus", "new", "topic", "topic_d", "review_ai"]),  # review_ai wrongs must not vanish
+                    ~models.DailyExercise.content.contains('"is_error_retry"'),  # copies served in daily/bonus don't double the original
                     models.DailyExercise.completed_at.isnot(None),
                     models.DailyExercise.completed_at >= cutoff,
                 )
@@ -219,6 +220,8 @@ async def get_training_session(
                 content = json.loads(de.content)
                 content["daily_exercise_id"] = de.id
                 content["source"] = "new"
+                if content.get("is_error_retry"):
+                    content["source"] = "error_ai"  # error-work badge inside the general mix
                 _enrich(content, de)
                 exercises.append(content)
             except Exception:
@@ -249,6 +252,8 @@ async def get_training_session(
                 content = json.loads(de.content)
                 content["daily_exercise_id"] = de.id
                 content["source"] = "bonus"
+                if content.get("is_error_retry"):
+                    content["source"] = "error_ai"  # error-work badge inside the general mix
                 _enrich(content, de)
                 exercises.append(content)
             except Exception:
@@ -480,6 +485,8 @@ async def get_training_session(
                     content = json.loads(de.content)
                     content["daily_exercise_id"] = de.id
                     content["source"] = de.source
+                    if content.get("is_error_retry"):
+                        content["source"] = "error_ai"
                     _enrich(content, de)
                     exercises.append(content)
                     used_de_ids.add(de.id)
@@ -577,6 +584,8 @@ async def get_training_session(
                 content = json.loads(de.content)
                 content["daily_exercise_id"] = de.id
                 content["source"] = de.source
+                if content.get("is_error_retry"):
+                    content["source"] = "error_ai"
                 _enrich(content, de)
                 exercises.append(content)
             except Exception:
@@ -1068,6 +1077,7 @@ def training_stats(
         models.DailyExercise.is_completed == True,
         models.DailyExercise.is_correct == False,
         models.DailyExercise.source.in_(["bonus", "new", "topic", "topic_d", "review_ai"]),  # review_ai wrongs must not vanish
+        ~models.DailyExercise.content.contains('"is_error_retry"'),
         models.DailyExercise.completed_at.isnot(None),
         models.DailyExercise.completed_at >= ai_cutoff,
     ).count()
