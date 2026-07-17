@@ -37,7 +37,16 @@ api.interceptors.response.use(
 // server — typically a stale service worker / offline cache eating the fetch,
 // which used to surface as a misleading "wrong password" toast.
 export function errorMessage(err, fallback = 'Что-то пошло не так') {
-  if (err.response) return err.response.data?.detail || fallback
+  if (err.response) {
+    const d = err.response.data?.detail
+    // Pydantic 422 returns detail as an ARRAY of error objects — passing it to a toast
+    // rendered nothing and the user saw a silent failure (weak-password registration)
+    if (Array.isArray(d)) {
+      const msgs = d.map(e => (e.msg || '').replace(/^Value error,\s*/, '')).filter(Boolean)
+      return msgs.join('; ') || fallback
+    }
+    return d || fallback
+  }
   return 'Сервер не отвечает. Обнови страницу (Ctrl+Shift+R); если не помогло — очисти данные сайта в настройках браузера.'
 }
 

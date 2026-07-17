@@ -16,6 +16,16 @@ export default function RegisterPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
+    // Client-side checks with a clear Russian message — the backend 422 used to render
+    // as a SILENT failure (user: «без ошибки не пропускает с простым паролем»)
+    if (password.length < 8) {
+      addToast('Пароль должен быть не короче 8 символов', 'error')
+      return
+    }
+    if (username.trim().length < 3) {
+      addToast('Логин должен быть не короче 3 символов', 'error')
+      return
+    }
     setLoading(true)
     try {
       await register(username, password, lang)
@@ -47,15 +57,20 @@ export default function RegisterPage() {
             autoComplete="username"
             required
           />
-          <Input
-            label="Пароль"
-            type="password"
-            placeholder="••••••••"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            autoComplete="new-password"
-            required
-          />
+          <div className="flex flex-col gap-1">
+            <Input
+              label="Пароль"
+              type="password"
+              placeholder="минимум 8 символов"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              autoComplete="new-password"
+              required
+            />
+            {password.length > 0 && password.length < 8 && (
+              <p className="text-xs text-amber-600">Ещё {8 - password.length} симв. — пароль должен быть не короче 8</p>
+            )}
+          </div>
           <div className="flex flex-col gap-1">
             <label className="text-sm font-medium text-gray-700">Родной язык</label>
             <div className="flex gap-3">
