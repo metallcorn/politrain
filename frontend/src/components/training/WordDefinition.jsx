@@ -55,9 +55,19 @@ export default function WordDefinition({ exercise, onAnswer, result, loading }) 
       {!submitted && (
         <>
           <PolishKeyboard inputRef={inputRef} value={value} onChange={setValue} />
-          <Button onClick={handleSubmit} disabled={!value.trim() || loading}>
-            Проверить
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              variant="secondary"
+              className="flex-1"
+              onClick={() => { setSubmitted(true); onAnswer({ user_answer: '', hint_used: hintUsed }) }}
+              disabled={loading}
+            >
+              Не знаю
+            </Button>
+            <Button className="flex-1" onClick={handleSubmit} disabled={!value.trim() || loading}>
+              Проверить
+            </Button>
+          </div>
         </>
       )}
 

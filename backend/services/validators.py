@@ -426,6 +426,9 @@ def _tilesify(item: dict) -> dict | None:
     words[idx] = words[idx].replace(word, "___", 1)
     item["question"] = " ".join(words)
     item["correct_answer"] = word.lower() if word[0].isupper() and idx > 0 else word
+    # Mistral wrote the explanation before WE picked the word — it explains some other
+    # aspect of the sentence and reads as nonsense next to the actual blank (#157)
+    item["explanation"] = None
     wh = item.get("word_hints")
     if isinstance(wh, dict):
         item["word_hints"] = {k: v for k, v in wh.items()

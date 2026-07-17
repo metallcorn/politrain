@@ -1259,12 +1259,12 @@ async def _generate_topic_exercises_for_daily(user, db: Session, today) -> list:
     return entries
 
 
-def _error_retry_entries(user, db: Session, today, source: str, limit: int = 3) -> list:
+def _error_retry_entries(user, db: Session, today, source: str, limit: int = None) -> list:
     """Error-work injected into the general pools (user decision 2026-07-15: daily/bonus
     include EVERYTHING — errors never shrink if they live only in a mode the user rarely
     opens). A copy is served; on a correct answer the dupes-clearing block in submit_answer
     marks the wrong ORIGINAL fixed, and SM2 puts the item into the practice queue."""
-    err_due = db.query(models.DailyExercise).filter(
+    backlog_q = db.query(models.DailyExercise).filter(
         models.DailyExercise.user_id == user.id,
         models.DailyExercise.is_completed == True,
         models.DailyExercise.is_correct == False,
@@ -1272,7 +1272,13 @@ def _error_retry_entries(user, db: Session, today, source: str, limit: int = 3) 
         models.DailyExercise.completed_at.isnot(None),
         models.DailyExercise.completed_at >= datetime.utcnow() - timedelta(days=14),
         ~models.DailyExercise.content.contains('"is_error_retry"'),
-    ).order_by(func.random()).limit(limit).all()
+    )
+    if limit is None:
+        # Scale with the backlog (feedback #156/#159: 3 retries/session vs 4-9 new
+        # mistakes — the pile could only grow). 6 when drowning, 3 when nearly clear.
+        backlog = backlog_q.count()
+        limit = 6 if backlog > 50 else 5 if backlog > 20 else 3
+    err_due = backlog_q.order_by(func.random()).limit(limit).all()
     out = []
     for de_err in err_due:
         try:

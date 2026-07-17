@@ -260,6 +260,8 @@ GRAMMAR_EXERCISES_PROMPT = (
     "  If the options are a lexical choice (months, cities, names), the sentence MUST contain context\n"
     "  that determines the single correct one. If the choice is grammatical (case/form) — always fine.\n"
     "- If the question is about meaning — all options in {native_language}\n"
+    "- FORBIDDEN: orthography-convention quizzes ('Która data jest poprawnie zapisana?', which spelling\n"
+    "  of a date/number is the right convention) — they test formatting habits, not language (#250)\n"
     "- FORBIDDEN: meta-questions like 'What happens to X in the context of Y?' where the correct form is already visible\n"
     "  Right: a Polish sentence with ___ (Zaprosiłem do domu ___ kolegę.) → form options\n"
     "  Wrong: 'What happens to kolega in the context Zaprosiłem do domu ___ kolegę?' — the answer is visible\n"
@@ -335,7 +337,8 @@ JUDGE_VERIFY_PROMPT = (
     "- You are unsure, cannot name the error, or the claim is incoherent/contradictory → \"correct\".\n"
     "REMEMBER (always correct, NOT errors): «ja jestem zmęczony/zmęczona», «byliśmy zmęczonymi sportowcami» "
     "(instrumental after być — correct), «zapomniał swojego/jego biletu», free word order, "
-    "«specjalnym autobusem» (instrumental), «o trzy kilometry dłuższa» (correct government).\n\n"
+    "«specjalnym autobusem» (instrumental), «o trzy kilometry dłuższa» (correct government), "
+    "«bez cukru i gorącego mleka» (bez + two coordinated genitives — correct, #251).\n\n"
     "You get a JSON array of objects {{id, sentence, claimed_error}}.\n"
     "Answer ONLY with a valid JSON array of the same size: "
     '[{{"id": <id>, "verdict": "error"|"correct"}}], no markdown.\n\n'
