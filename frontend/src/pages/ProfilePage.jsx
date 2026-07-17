@@ -9,6 +9,7 @@ import ActivityDashboard from '../components/gamification/ActivityDashboard'
 import Leaderboard from '../components/gamification/Leaderboard'
 import Skeleton from '../components/ui/Skeleton'
 import Button from '../components/ui/Button'
+import InstallPwa from '../components/InstallPwa'
 import { Zap, Flame, Target, LogOut, Settings, ShieldCheck, Clock } from 'lucide-react'
 
 const LANGUAGES = [
@@ -263,6 +264,9 @@ export default function ProfilePage() {
           </div>
         </div>
       )}
+
+      {/* Install as app (hidden when already standalone) */}
+      <InstallPwa />
 
       {/* Settings */}
       <Card>
