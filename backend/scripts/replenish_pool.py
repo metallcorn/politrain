@@ -25,12 +25,15 @@ from services.generation import (  # noqa: E402
 BATCH_RAW = 24        # raw items to request per generation round (~14-18 survive)
 MAX_ROUNDS = 3        # per (user, level) per night — cost guard
 MIN_TARGET = 10       # floor so a returning user isn't greeted by an empty pool
-MAX_TARGET = 60       # cost ceiling
+MAX_TARGET = 90       # cost ceiling (raised with the 3-day target)
+RESERVE_DAYS = 3      # keep 3 days of consumption on hand; the job runs twice daily, so a
+                      # heavy-usage day can drain the reserve and the 16:30 run tops it back up
+                      # before the evening session (feedback #162: sessions built live = slow)
 
 
 def _reserve_target(db, user_id: int, level: str) -> int:
-    """2 days' worth of this user's ACTUAL consumption at this level (7-day average).
-    User rule: never generate endlessly — if the unseen reserve already covers ~2 days
+    """N days' worth of this user's ACTUAL consumption at this level (7-day average).
+    User rule: never generate endlessly — if the unseen reserve already covers RESERVE_DAYS
     of real usage, no new exercises are needed."""
     row = db.execute(
         __import__("sqlalchemy").text(
@@ -41,7 +44,7 @@ def _reserve_target(db, user_id: int, level: str) -> int:
         ), {"uid": user_id, "lvl": level},
     ).fetchone()
     weekly = row[0] if row else 0
-    target = round(weekly / 7 * 2)
+    target = round(weekly / 7 * RESERVE_DAYS)
     return max(MIN_TARGET, min(MAX_TARGET, target))
 
 
@@ -75,7 +78,7 @@ async def replenish():
                 for round_no in range(MAX_ROUNDS):
                     unseen = _unseen_count(db, user.id, level)
                     if unseen >= target:
-                        print(f"[replenish] user={user.id} level={level} reserve={unseen} >= target={target} (2-day pace) ok")
+                        print(f"[replenish] user={user.id} level={level} reserve={unseen} >= target={target} (3-day pace) ok")
                         break
                     print(f"[replenish] user={user.id} level={level} reserve={unseen} < target={target} → generating (round {round_no + 1})")
                     topics = _select_topics_for_generation(user, db)

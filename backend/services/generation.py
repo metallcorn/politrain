@@ -60,6 +60,17 @@ def _clamp_vocab_level(raw, user_level: str) -> str:
 
 # Per-topic emphasis injected into topic generation (lean — only where the default
 # explanation misses a pattern users specifically struggle with).
+# Life settings rotated into each generation to break the shop/food monotony (#164).
+_LIFE_SCENARIOS = [
+    "at the doctor's / pharmacy", "travel and airports", "cooking and recipes",
+    "a work meeting or office", "weather and seasons", "sport and the gym",
+    "hobbies and free time", "family and relationships", "phone and internet",
+    "public transport", "a hotel or renting a flat", "school and studying",
+    "money, banks and bills", "nature, hiking, animals", "holidays and celebrations",
+    "emotions and moods", "neighbours and small talk", "car and driving",
+    "clothes and shopping for style", "books, films and music",
+]
+
 _TOPIC_FOCUS = {
     "prepositions": (
         "Focus on the CHOICE of preposition: whether one is needed and which. Contrast cases where "
@@ -778,6 +789,10 @@ async def _generate_exercises(user, count: int, interest_themes_str: str, level:
     are tied to specific grammar rules. Each grammar exercise gets topic_slug + topic_title in content.
     """
     gen_level = level or user.level
+    # Rotating life-scenario nudge (feedback #164: exercises kept reusing the same
+    # setting — «wczoraj kupiłem w sklepie»). A random couple of settings per generation
+    # pushes Mistral toward varied situations without bloating the prompt.
+    scenario_hint = ", ".join(random.sample(_LIFE_SCENARIOS, 3))
     word_def_count = max(1, count // 10)        # ~1-2 из 15
     letter_tiles_count = max(1, count // 8)     # ~2 из 15
     judge_count = max(2, count // 5)            # ~3 из 15
@@ -821,6 +836,8 @@ async def _generate_exercises(user, count: int, interest_themes_str: str, level:
         if topics:
             rule_names = ", ".join(t.title_ru or t.slug for t in topics)
             prompt = f"Grammar rules of this session: {rule_names}. Build examples in the context of these rules.\n\n" + prompt
+        prompt = (f"Vary the SETTINGS across these exercises — draw on situations like: {scenario_hint}. "
+                  f"Do not put every sentence in a shop or about food.\n\n") + prompt
         for model_name, timeout_sec in [("mistral-large-latest", 60.0), ("mistral-small-latest", 40.0)]:
             try:
                 raw = await mistral.simple_prompt(
