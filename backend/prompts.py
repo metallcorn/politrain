@@ -213,7 +213,11 @@ _EXERCISE_COMMON_RULES = (
     '- If the answer is a numeral written as a word (dwa, piątego): in fill_blank/letter_tiles the question '
     'MUST contain the digit as a cue in parentheses, e.g. "Mam ___ lata. (2)" — otherwise any number fits; '
     'NEVER split a compound numeral with the blank — ___ must cover the whole number. '
-    'In order_words NO digit cue — the numeral word is already visible among the pieces\n'
+    'In order_words NO digit cue — the numeral word is already visible among the pieces. '
+    'NOUN AGREEMENT: the noun after the numeral must match the ANSWER numeral, not a default. '
+    '2/3/4 and compounds ending in them (22,23,24…) take nominative plural (dwa LATA, dwadzieścia trzy LATA); '
+    '5-21 and everything else take genitive plural (pięć LAT, dwadzieścia pięć LAT — NOT lata). '
+    'VIOLATION #165: "ma ___ lata (25)" → 25 needs LAT, so "lata" is wrong; write "ma ___ lat (25)"\n'
     '- Add "(mówi kobieta)"/"(mówi mężczyzna)" markers only when the speaker\'s gender REALLY affects the answer '
     '(e.g. poszłam vs poszedłem); if the answer is the same for both genders — no marker\n'
     '- In multiple_choice all options are in the same language as the question: '
@@ -260,6 +264,11 @@ GRAMMAR_EXERCISES_PROMPT = (
     "  If the options are a lexical choice (months, cities, names), the sentence MUST contain context\n"
     "  that determines the single correct one. If the choice is grammatical (case/form) — always fine.\n"
     "- If the question is about meaning — all options in {native_language}\n"
+    "- If the answer depends on GRAMMATICAL PERSON (verb form for ja/ty/my/wy/oni), the "
+    "{native_language} question must name that person UNAMBIGUOUSLY. VIOLATION (#254): question "
+    "«Где вы находитесь?» with answer «Jesteśmy w pracy» (we) — «вы» is 2nd person, «мы» is the "
+    "answer; they don't match, and «вы» could be formal singular anyway. Ask «Где ВЫ (мн.)» → «Jesteście», "
+    "«Где МЫ» → «Jesteśmy». The pronoun in the question and the answer's person must agree.\n"
     "- FORBIDDEN: orthography-convention quizzes ('Która data jest poprawnie zapisana?', which spelling\n"
     "  of a date/number is the right convention) — they test formatting habits, not language (#250)\n"
     "- FORBIDDEN: meta-questions like 'What happens to X in the context of Y?' where the correct form is already visible\n"

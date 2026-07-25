@@ -570,6 +570,15 @@ def _fix_order_words_exercise(item: dict) -> dict | None:
     if not question or not correct:
         return None
 
+    # order_words must be ONE sentence. Mistral sometimes fuses two unrelated ones into
+    # the answer ("Ile trwa seans? Teraz idę do kina." — #253); the user can't reassemble
+    # two sentences from one shuffled bag. An internal ?/! or a . that isn't the very last
+    # character means multiple sentences → reject.
+    for alt in correct.split(' / '):
+        inner = alt.strip().rstrip('.?!')
+        if re.search(r'[.?!]', inner):
+            return None
+
     # Extract words from question (split by /). A chip must contain a LETTER: this drops
     # standalone punctuation ("." — report #232) AND stray digit cues ("(3)" — report #243,
     # the fill_blank numeral-cue rule leaking into order_words; the numeral word is already
@@ -639,6 +648,11 @@ def _fix_word_definition_exercise(item: dict) -> dict | None:
         return None
     # Check word stem: if answer minus last char appears in question, likely a derivative is used
     if len(c_norm) >= 5 and c_norm[:-1] in q_norm:
+        return None
+    # A same-root word gives the answer away even when the prefix differs: answer 'dziękuję'
+    # with «chcemy podziękować» in the riddle — root 'dzięk' is inside 'podziękować' (#168).
+    # The 5-char root as a substring catches derivations the [:-1] prefix check misses.
+    if len(c_norm) >= 6 and c_norm[:5] in q_norm:
         return None
     # 4-letter answers slipped through the >=5 threshold: answer 'tata' with «Mówisz do
     # niej 'tato'» in the riddle (#244). Word-boundary prefix match keeps 3-letter stems

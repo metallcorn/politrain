@@ -336,6 +336,11 @@ def _validate_batch(items: list, user, db: Session, *, pool_drawn=(), label: str
     validated = []
     rejects = Counter()
     for item in items:
+        # Strip junk all-caps acronym markers Mistral tacks onto questions ("(NCB)" — #160).
+        # Legit parentheticals are lowercase (mówi kobieta), digit cues (25) or base forms.
+        q = item.get("question")
+        if isinstance(q, str) and "(" in q:
+            item["question"] = re.sub(r'\s*\([A-Z]{2,5}\)', '', q).strip()
         for name, fn in _FIXER_CHAIN:
             item = fn(item)
             if item is None:
@@ -1278,7 +1283,10 @@ def _error_retry_entries(user, db: Session, today, source: str, limit: int = Non
         # mistakes — the pile could only grow). 6 when drowning, 3 when nearly clear.
         backlog = backlog_q.count()
         limit = 6 if backlog > 50 else 5 if backlog > 20 else 3
-    err_due = backlog_q.order_by(func.random()).limit(limit).all()
+    # OLDEST mistakes first (feedback #166: SRS should surface long-unrepeated items,
+    # not random — random meant an old error might never come back and the pile felt
+    # eternal). Deterministic drain: the oldest unfixed error always comes up next.
+    err_due = backlog_q.order_by(models.DailyExercise.completed_at.asc()).limit(limit).all()
     out = []
     for de_err in err_due:
         try:

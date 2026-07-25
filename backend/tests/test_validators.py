@@ -492,6 +492,13 @@ class TestWordDefinitionShortStem:
                 "correct_answer": "pies"}
         assert _fix_word_definition_exercise(item) is not None
 
+    def test_same_root_derivation_leak_rejected(self):
+        # report #168: answer 'dziękuję', riddle says «chcemy podziękować» — root 'dzięk' leaks
+        item = {"type": "word_definition",
+                "question": "To słowo mówimy, kiedy chcemy komuś podziękować za pomoc.",
+                "correct_answer": "dziękuję"}
+        assert _fix_word_definition_exercise(item) is None
+
 
 class TestTranslationNamesMismatch:
     def test_kowalski_only_in_translation_rejected(self):
@@ -574,6 +581,21 @@ class TestOrderWordsDigitCue:
         assert "(3)" not in out["question"]
         assert sorted(out["question"].split(" / ")) == sorted(
             "kupiłam jabłka trzy czerwone wczoraj".split())
+
+
+class TestOrderWordsMultiSentence:
+    def test_two_sentences_rejected(self):
+        # report #253: two unrelated sentences fused into one order_words bag
+        item = {"type": "order_words",
+                "question": "teraz / seans / trwa / Ile / idę / do / kina",
+                "correct_answer": "Ile trwa seans? Teraz idę do kina."}
+        assert _fix_order_words_exercise(item) is None
+
+    def test_single_sentence_ok(self):
+        item = {"type": "order_words",
+                "question": "idę / Teraz / kina / do",
+                "correct_answer": "Teraz idę do kina."}
+        assert _fix_order_words_exercise(item) is not None
 
 
 class TestStemLeak:
