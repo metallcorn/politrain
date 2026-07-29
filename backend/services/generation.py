@@ -34,6 +34,7 @@ from services.validators import (
     _fix_word_definition_exercise,
     _too_similar,
     _question_skeleton,
+    _skeleton_for_item,
     _is_numeral_word,
     _dedup_question_key,
 )
@@ -84,6 +85,13 @@ _TOPIC_FOCUS = {
     "instrumental": (
         "IMPORTANT: the difference between «być/zostać + narzędnik» (jest lekarzem) and «pracować JAKO + "
         "mianownik» (pracuje jako lekarz — NOT lekarzem!). After jako — NOMINATIVE case. Never mix these up."
+    ),
+    "vocative": (
+        "VARY THE ADDRESSEE every time — feedback #173: exercises kept repeating «drogi przyjacielu / "
+        "Mario / mamo». Rotate across: first names (m & f — Aniu, Tomku, Kasiu, Piotrze), titles "
+        "(panie doktorze, pani profesor, panie kierowniku), family (mamo, tato, babciu, synku, córeczko), "
+        "roles (kelnerze, sąsiedzie, kolego), pets/affection, and plain nouns (kochanie, przyjacielu). "
+        "Cover different endings: -o (mamo), -u (synku), -e (panie), -i (pani). Do NOT default to «drogi przyjacielu»."
     ),
 }
 
@@ -228,7 +236,7 @@ def _pool_draw(db: Session, user_id: int, level: str, count: int,
             d = json.loads(p.content)
         except Exception:
             d = {}
-        sk = _question_skeleton(d.get("question", "")) if d else ""
+        sk = _skeleton_for_item(d) if d else ""
         if sk and sk in used_sk:
             continue  # same construction already seen / already drawn this session
         ans = _answer_dedup_key(d)
@@ -275,8 +283,7 @@ def _seen_skeletons(user_id: int, db: Session, limit: int = 80) -> Counter:
     counts = Counter()
     for de in rows:
         try:
-            q = json.loads(de.content).get("question", "")
-            sk = _question_skeleton(q)
+            sk = _skeleton_for_item(json.loads(de.content))
             if sk:
                 counts[sk] += 1
         except Exception:
@@ -338,7 +345,7 @@ def _validate_batch(items: list, user, db: Session, *, pool_drawn=(), label: str
         qn0 = _norm(d0.get("question", ""))
         if qn0:
             seen_qs.add(qn0); seen_tokens.append(set(qn0.split()))
-        sk0 = _question_skeleton(d0.get("question", ""))
+        sk0 = _skeleton_for_item(d0)
         if sk0:
             skeletons[sk0] += 1
         a0 = _answer_dedup_key(d0)
@@ -369,7 +376,7 @@ def _validate_batch(items: list, user, db: Session, *, pool_drawn=(), label: str
         if qn in seen_qs or _too_similar(qn, seen_tokens):
             rejects["duplicate"] += 1
             continue
-        sk = _question_skeleton(item.get("question", ""))
+        sk = _skeleton_for_item(item)
         if sk and skeletons[sk] >= _SKELETON_MAX:
             rejects["skeleton"] += 1
             continue
@@ -747,6 +754,28 @@ def _select_topics_for_generation(user, db: Session, n: int = 2) -> list:
         ).all()
         if row[0]
     }
+
+    # Frequency penalty (feedback #172): binary recent/not wasn't enough — a low-score topic
+    # (numbers-dates) stayed weakest and got re-picked, producing 47 exercises in 5 days while
+    # others got ~1. Count how many exercises each topic actually produced in the last 3 days
+    # and push heavily-served topics to the back, so the rotation spreads across more topics.
+    freq_cutoff = (datetime.utcnow() - timedelta(days=3)).date()
+    freq_by_topic = Counter()
+    for (tid,) in db.query(models.DailyExercise.topic_id).filter(
+        models.DailyExercise.user_id == user.id,
+        models.DailyExercise.topic_id.isnot(None),
+        models.DailyExercise.source.in_(["new", "bonus", "topic_d"]),
+        models.DailyExercise.date >= freq_cutoff,
+    ).all():
+        if tid:
+            freq_by_topic[tid] += 1
+    # Re-sort candidates: least-served first (bucketed by 5s so weak-topic priority survives
+    # within an equal-frequency band), then the existing level/score priority.
+    candidates.sort(key=lambda t: (
+        freq_by_topic.get(t.id, 0) // 5,
+        _LEVEL_ORDER.index(t.level_required) if t.level_required in _LEVEL_ORDER else 99,
+        _topic_score(t),
+    ))
 
     # Done topics resurface for spaced review (not in the last 7 days) — otherwise a
     # mastered topic like negation disappears forever and never gets reinforced.

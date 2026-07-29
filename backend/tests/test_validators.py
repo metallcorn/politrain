@@ -583,6 +583,20 @@ class TestOrderWordsDigitCue:
             "kupiłam jabłka trzy czerwone wczoraj".split())
 
 
+class TestJudgeNumeralCue:
+    def test_digit_cue_judge_rejected(self):
+        # report #256/#170: judge_sentence with a digit cue mislabels numeral agreement
+        item = {"type": "judge_sentence",
+                "question": "Mam doświadczenie od dwa (2) lat.",
+                "correct_answer": "true", "explanation": "x"}
+        assert _fix_judge_sentence_exercise(item) is None
+
+    def test_plain_judge_ok(self):
+        item = {"type": "judge_sentence", "question": "Wczoraj poszedłem do kina.",
+                "correct_answer": "true"}
+        assert _fix_judge_sentence_exercise(item) is not None
+
+
 class TestOrderWordsMultiSentence:
     def test_two_sentences_rejected(self):
         # report #253: two unrelated sentences fused into one order_words bag

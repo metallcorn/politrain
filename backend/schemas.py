@@ -239,6 +239,7 @@ class ExplainRequest(BaseModel):
     explanation: Optional[str] = None
     translation: Optional[str] = None
     level: int = 1  # 1 = brief, 2 = detailed with examples
+    regenerate: bool = False  # force a fresh explanation, bypassing the cache (#174)
 
 
 class ProfileResponse(BaseModel):

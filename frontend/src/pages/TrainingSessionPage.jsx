@@ -15,7 +15,7 @@ import WordDefinition from '../components/training/WordDefinition'
 import ReadingExercise from '../components/training/ReadingExercise'
 import SessionResult from '../components/training/SessionResult'
 import ProgressBar from '../components/ui/ProgressBar'
-import { ArrowLeft, SkipForward, Flag, X, Brain, Sparkles, CheckCircle, Rocket, CalendarDays, BookOpen, MessageCircle } from 'lucide-react'
+import { ArrowLeft, SkipForward, Flag, X, Brain, Sparkles, CheckCircle, Rocket, CalendarDays, BookOpen, MessageCircle, RefreshCw } from 'lucide-react'
 import Markdown from '../components/ui/Markdown'
 
 export default function TrainingSessionPage() {
@@ -185,10 +185,11 @@ export default function TrainingSessionPage() {
     }
   }
 
-  const fetchAiLevel = async (level) => {
-    if (aiTexts[level] !== null) return
+  const fetchAiLevel = async (level, regenerate = false) => {
+    if (aiTexts[level] !== null && !regenerate) return
     const nonce = aiNonceRef.current
     setAiLoading(true)
+    if (regenerate) setAiTexts((t) => ({ ...t, [level]: null }))
     try {
       const res = await trainingApi.explain({
         exercise_type: currentEx.type,
@@ -199,6 +200,7 @@ export default function TrainingSessionPage() {
         explanation: currentEx.explanation || null,
         translation: currentEx.translation || null,
         level,
+        regenerate,
       })
       if (aiNonceRef.current !== nonce) return  // navigated away — discard stale response
       setAiTexts((t) => ({ ...t, [level]: res.data.text }))
@@ -219,6 +221,8 @@ export default function TrainingSessionPage() {
     setAiLevel(2)
     fetchAiLevel(2)
   }
+
+  const handleRegenerate = () => fetchAiLevel(aiLevel, true)
 
   const handleSkip = () => {
     // Mark as completed server-side so it doesn't reappear in the next session
@@ -552,6 +556,16 @@ export default function TrainingSessionPage() {
                   className="text-xs text-gray-400 hover:text-gray-600 transition-colors self-start"
                 >
                   ← Краткое объяснение
+                </button>
+              )}
+              {/* Regenerate — cached explanation may address a different mistake (#174) */}
+              {aiTexts[aiLevel] !== null && !aiLoading && (
+                <button
+                  onClick={handleRegenerate}
+                  className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-primary-600 transition-colors self-start"
+                >
+                  <RefreshCw size={12} />
+                  Переобъяснить заново
                 </button>
               )}
             </div>

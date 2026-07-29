@@ -48,6 +48,14 @@ from services.generation import (
 router = APIRouter(prefix="/training", tags=["training"])
 
 
+# SRS tuning for AI exercises (feedback #176). First-try correct comes back in 4 days
+# (not 1) so the review queue doesn't flood; an item mature enough to have survived a
+# 3-week gap and still answered clean first-try graduates out of review entirely.
+_SRS_FIRST_DAYS = 4
+_SRS_GRADUATE_DAYS = 21
+_VOCAB_GRADUATE_DAYS = 45
+
+
 def _session_length_count(prefs) -> int:
     if not prefs:
         return 20
@@ -672,24 +680,31 @@ async def submit_answer(
                 elif ex_type in ("flashcard", "letter_tiles") and content.get("vocab_id"):
                     _vocab_mode = "reduced"   # SRS vocab in daily review — easier than exercises
 
-                # SRS scheduling for AI exercises (user decision 2026-07-12: «Повторение»
-                # works like the errors list — a real SRS queue). Every correct answer is
-                # scheduled; the queue is drained by mode=practice (full sessions of due
-                # items, oldest first), not by a 3/day trickle, so it shrinks visibly.
-                # A repeat pass through practice re-answers the SAME row → intervals grow
-                # 1d → 6d → exponentially, so mature items leave the daily flow.
+                # SRS scheduling for AI exercises. The queue exploded (practice_due 300+,
+                # feedback #176): every correct answer came back in 1 day. Two changes:
+                # (1) longer first interval — a first-try correct answer returns in 4 days,
+                #     not tomorrow, so intake into the queue drops several-fold;
+                # (2) GRADUATION — a MATURE item (interval ≥21d, i.e. it survived a long gap)
+                #     answered correctly first-try is considered learned and retires forever
+                #     (next_review=None). No point re-drilling a word you nailed after weeks.
                 if de.source in ("new", "bonus", "review_ai", "topic_d"):
                     if is_correct:
-                        quality = 3 if diacritic_hint else 5
-                        _, new_interval, new_reps, next_rev = calculate_next_review(
-                            2.5,
-                            max(1, de.srs_interval_days or 1),
-                            de.srs_repetitions or 0,
-                            quality,
-                        )
-                        de.srs_interval_days = new_interval
-                        de.srs_repetitions = new_reps
-                        de.next_review = next_rev
+                        prev_interval = de.srs_interval_days or 0
+                        clean = not diacritic_hint  # nailed it, no diacritic slip
+                        if clean and prev_interval >= _SRS_GRADUATE_DAYS:
+                            de.next_review = None  # graduated — leaves the review flow
+                        else:
+                            quality = 3 if diacritic_hint else 5
+                            _, new_interval, new_reps, next_rev = calculate_next_review(
+                                2.5, max(1, prev_interval), de.srs_repetitions or 0, quality,
+                            )
+                            # Stretch the FIRST correct interval 1d → 4d (SM2 gives 1 for rep0)
+                            if (de.srs_repetitions or 0) == 0 and clean:
+                                new_interval = _SRS_FIRST_DAYS
+                                next_rev = date.today() + timedelta(days=new_interval)
+                            de.srs_interval_days = new_interval
+                            de.srs_repetitions = new_reps
+                            de.next_review = next_rev
                     else:
                         de.srs_interval_days = 0
                         de.srs_repetitions = 0
@@ -799,6 +814,11 @@ async def submit_answer(
                     uv.interval_days = new_interval
                     uv.repetitions = new_reps
                     uv.next_review = next_rev
+                    # Graduate a well-known word out of review (feedback #176): a mature card
+                    # (interval ≥45d — vocab keeps longer than exercises) answered correct
+                    # retires. The word is learned; stop scheduling it.
+                    if quality >= 4 and (uv.interval_days or 0) >= _VOCAB_GRADUATE_DAYS:
+                        uv.next_review = None
                     uv.last_reviewed = datetime.utcnow()  # marks word as practiced (distinguishes wrong from never-seen)
                     # Use quality for streak — handles reverse-direction flashcards correctly
                     streak_correct = quality >= 3
@@ -1125,8 +1145,10 @@ def training_stats(
 
 
 def _explain_cache_key(question: str, correct_answer: str, is_correct: bool, level: int,
-                       user_level: str, native_language: str) -> str:
-    raw = f"{question}|{correct_answer}|{is_correct}|{level}|{user_level}|{native_language}"
+                       user_level: str, native_language: str, user_answer: str = "") -> str:
+    # user_answer is part of the key (#174): a cached explanation was written for ONE
+    # specific mistake; a different wrong answer needs its own explanation, not the stale one.
+    raw = f"{question}|{correct_answer}|{is_correct}|{level}|{user_level}|{native_language}|{(user_answer or '').strip().lower()}"
     return hashlib.sha256(raw.encode()).hexdigest()[:48]
 
 
@@ -1139,14 +1161,15 @@ async def explain_exercise(
     level = max(1, min(2, data.level))
     cache_key = _explain_cache_key(
         data.question, data.correct_answer, data.is_correct,
-        level, current_user.level, current_user.native_language,
+        level, current_user.level, current_user.native_language, data.user_answer or "",
     )
 
-    cached = db.query(models.AIExplanationCache).filter(
-        models.AIExplanationCache.cache_key == cache_key
-    ).first()
-    if cached:
-        return {"text": cached.text, "cached": True}
+    if not data.regenerate:
+        cached = db.query(models.AIExplanationCache).filter(
+            models.AIExplanationCache.cache_key == cache_key
+        ).first()
+        if cached:
+            return {"text": cached.text, "cached": True}
 
     type_labels = {
         "fill_blank": "fill in the missing word",
@@ -1233,7 +1256,13 @@ async def explain_exercise(
     if not text:
         raise HTTPException(status_code=503, detail="AI temporarily unavailable")
 
-    db.add(models.AIExplanationCache(cache_key=cache_key, level=level, text=text))
+    existing = db.query(models.AIExplanationCache).filter(
+        models.AIExplanationCache.cache_key == cache_key
+    ).first()
+    if existing:
+        existing.text = text  # regenerate=True path — replace the stale explanation
+    else:
+        db.add(models.AIExplanationCache(cache_key=cache_key, level=level, text=text))
     try:
         db.commit()
     except Exception:

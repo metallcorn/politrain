@@ -539,7 +539,14 @@ def _fix_judge_sentence_exercise(item: dict) -> dict | None:
     """Ensure judge_sentence has correct_answer of 'true' or 'false' and no blanks."""
     if item.get("type") != "judge_sentence":
         return item
-    if "___" in (item.get("question") or ""):
+    question = item.get("question") or ""
+    if "___" in question:
+        return None
+    # Digit cues «(2)», «trzy (3)» in a judge sentence are a reliable failure class
+    # (#256 «od dwa (2) lat» mislabelled true; #170 explanation blamed the wrong word):
+    # Mistral can't reliably judge numeral-noun agreement AND the parenthetical digit is
+    # a fill_blank artifact that has no business in a true/false sentence.
+    if re.search(r'\(\s*\d+\s*\)', question):
         return None
     ca = str(item.get("correct_answer", "")).strip().lower()
     if ca in ("true", "false"):
@@ -730,3 +737,14 @@ def _question_skeleton(question: str, n: int = 3) -> str:
     if len(words) < n + 1:   # need at least one word beyond the opening to vary
         return ""
     return " ".join(words[:n])
+
+
+def _skeleton_for_item(d: dict, n: int = 3) -> str:
+    """Skeleton fingerprint keyed to the POLISH side. For translate the `question` is in the
+    user's native language, so anti-cliché on it did nothing — «На столе лежат…» kept coming
+    back (feedback #175). Key translate by the Polish correct_answer instead; other types by
+    the question as before."""
+    if d.get("type") == "translate":
+        first = (d.get("correct_answer") or "").split(" / ")[0]
+        return _question_skeleton(first, n)
+    return _question_skeleton(d.get("question", ""), n)
