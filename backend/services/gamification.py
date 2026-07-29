@@ -165,12 +165,33 @@ def check_achievements(user: models.User, db: Session) -> list[models.Achievemen
     return earned
 
 
+# Levels that count toward the "progress to B1" bar. B2 (added later) must NOT dilute it —
+# the old formula used ALL topics as the denominator, so adding topics dropped the bar even
+# though the user learned nothing (2026-07-29: +6 B1 topics knocked ~79% down to ~65%).
+_TO_B1_LEVELS = ("A0", "A1", "A2", "B1")
+
 def calculate_b1_progress(user_id: int, db: Session) -> float:
-    total = db.query(models.Topic).count()
+    """Honest, responsive progress through the A0..B1 curriculum. Denominator capped at B1
+    (future B2 topics don't count). PARTIAL credit by score so the bar moves as a topic
+    improves, not only when it flips to 'done' — a topic at 0.6 contributes 0.6, done = 1.0."""
+    topic_ids = [t[0] for t in db.query(models.Topic.id).filter(
+        models.Topic.level_required.in_(_TO_B1_LEVELS)
+    ).all()]
+    total = len(topic_ids)
     if total == 0:
         return 0.0
-    done = db.query(models.UserTopicProgress).filter(
-        models.UserTopicProgress.user_id == user_id,
-        models.UserTopicProgress.status == "done",
-    ).count()
-    return round((done / total) * 100, 1)
+    by_topic = {
+        p.topic_id: p for p in db.query(models.UserTopicProgress).filter(
+            models.UserTopicProgress.user_id == user_id,
+            models.UserTopicProgress.topic_id.in_(topic_ids),
+        ).all()
+    }
+    credit = 0.0
+    for tid in topic_ids:
+        p = by_topic.get(tid)
+        if not p:
+            continue
+        # done → full; otherwise partial credit = score, capped below 1 so only real
+        # completion reaches 100%
+        credit += 1.0 if p.status == "done" else min(p.score or 0.0, 0.95)
+    return round((credit / total) * 100, 1)
