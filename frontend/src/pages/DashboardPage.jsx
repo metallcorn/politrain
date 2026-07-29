@@ -6,6 +6,7 @@ import Card from '../components/ui/Card'
 import ProgressToB1 from '../components/gamification/ProgressToB1'
 import StreakCounter from '../components/gamification/StreakCounter'
 import Skeleton from '../components/ui/Skeleton'
+import WhatsNew from '../components/layout/WhatsNew'
 import { BookOpen, Dumbbell, MessageSquare, AlertTriangle, Zap } from 'lucide-react'
 
 export default function DashboardPage() {
@@ -68,6 +69,7 @@ export default function DashboardPage() {
           <h1 className="text-2xl font-bold text-gray-900">{user?.username} 👋</h1>
         </div>
         <div className="flex items-center gap-3">
+          <WhatsNew />
           <div className="flex items-center gap-1">
             <Zap size={16} className="text-yellow-500" />
             <span className="font-bold text-gray-700">{user?.xp}</span>

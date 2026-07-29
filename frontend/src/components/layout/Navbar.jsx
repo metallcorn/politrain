@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom'
 import { LogOut, User } from 'lucide-react'
 import XPBar from '../gamification/XPBar'
 import StreakCounter from '../gamification/StreakCounter'
+import WhatsNew from './WhatsNew'
 
 export default function Navbar() {
   const { user, logout } = useAuthStore()
@@ -19,6 +20,7 @@ export default function Navbar() {
         {user && <XPBar xp={user.xp} />}
       </div>
       <div className="flex items-center gap-4">
+        <WhatsNew />
         {user && <StreakCounter days={user.streak_days} />}
         <Link to="/profile" className="flex items-center gap-2 text-gray-600 hover:text-primary-800 transition-colors">
           <div className="w-8 h-8 rounded-full bg-primary-800 text-white flex items-center justify-center text-sm font-bold">

@@ -59,6 +59,37 @@ def _clamp_vocab_level(raw, user_level: str) -> str:
     return lv if lv in set(_eligible_vocab_levels(user_level)) else user_level
 
 
+def _pick_new_vocab(user, db: Session, seen_vocab_ids: set, n: int = 2) -> list:
+    """Pick n brand-new words, pulling the learner UP a level. Priority order of levels:
+    next_level → current → 2-step stretch. But only prefer next_level once the CURRENT level
+    is genuinely known (≥40 words with streak≥1) — otherwise finish the current level first.
+    Fully relative to user.level (works A1→A2 exactly like A2→B1); never hardcodes a level."""
+    cur = user.level if user.level in _LEVEL_ORDER else "A2"
+    nxt = _next_level(cur)
+    known_here = db.query(models.UserVocabulary).join(
+        models.Vocabulary, models.Vocabulary.id == models.UserVocabulary.vocab_id,
+    ).filter(
+        models.UserVocabulary.user_id == user.id,
+        models.UserVocabulary.correct_streak >= 1,
+        models.Vocabulary.level == cur,
+    ).count()
+    # Level preference: if current level is mastered enough, lead with the next level.
+    if known_here >= 40 and nxt != cur:
+        order = [nxt, cur] + [l for l in _eligible_vocab_levels(cur) if l not in (nxt, cur)]
+    else:
+        order = [cur, nxt] + [l for l in _eligible_vocab_levels(cur) if l not in (nxt, cur)]
+    out = []
+    for lvl in order:
+        if len(out) >= n:
+            break
+        rows = db.query(models.Vocabulary).filter(
+            models.Vocabulary.level == lvl,
+            models.Vocabulary.id.notin_(seen_vocab_ids) if seen_vocab_ids else True,
+        ).order_by(func.random()).limit(n - len(out)).all()
+        out.extend(rows)
+    return out
+
+
 # Per-topic emphasis injected into topic generation (lean — only where the default
 # explanation misses a pattern users specifically struggle with).
 # Life settings rotated into each generation to break the shop/food monotony (#164).
@@ -581,18 +612,24 @@ async def _generate_idiom_drill_exercises(user, db: Session, today, max_count: i
 
 
 async def _ensure_vocab_pool(user, db: Session, threshold: int = 40, batch: int = 50):
-    """Generate new vocabulary words via Mistral when pool runs low."""
-    eligible_levels = _eligible_vocab_levels(user.level)
+    """Generate new vocabulary words via Mistral when pool runs low.
+
+    Checks the NEXT-level reserve specifically (feedback 2026-07-29): the aggregate check
+    let 370 unseen A2 words mask an empty B1 shelf, so B1 words were never generated and the
+    learner stayed lexically frozen. Now generation targets the level we want to pull toward.
+    Relative to user.level — for an A1 user this tops up A2, exactly the same machinery."""
     seen_ids = {uv.vocab_id for uv in db.query(models.UserVocabulary).filter(
         models.UserVocabulary.user_id == user.id
     ).all()}
-    new_count = db.query(models.Vocabulary).filter(
-        models.Vocabulary.level.in_(eligible_levels),
+    cur = user.level if user.level in _LEVEL_ORDER else "A2"
+    target_level = _next_level(cur)  # the level we want to stock
+    next_count = db.query(models.Vocabulary).filter(
+        models.Vocabulary.level == target_level,
         models.Vocabulary.id.notin_(seen_ids) if seen_ids else True,
     ).count()
 
-    if new_count >= threshold:
-        return  # pool is fine
+    if next_count >= threshold:
+        return  # next-level shelf is well stocked
 
     # Build avoid list from the 60 most recently added vocab words (scalable even with thousands)
     recent_words = db.query(models.Vocabulary.polish).order_by(
@@ -604,7 +641,7 @@ async def _ensure_vocab_pool(user, db: Session, threshold: int = 40, batch: int 
         raw = await mistral.simple_prompt(
             system="You are a Polish vocabulary generator. Respond only with valid JSON array.",
             user=prompts.VOCAB_GENERATION_PROMPT.format(
-                level=user.level,
+                level=target_level,  # generate at the level we're pulling toward, not the current one
                 native_language=lang_name(user.native_language),
                 count=batch,
                 avoid_words=avoid_list,
@@ -726,7 +763,10 @@ def _select_topics_for_generation(user, db: Session, n: int = 2) -> list:
     # Sort: lower level first, then lower score first (weakest topics get priority)
     candidates.sort(key=lambda t: (_LEVEL_ORDER.index(t.level_required) if t.level_required in _LEVEL_ORDER else 99, _topic_score(t)))
 
-    # If >=60% of current+below topics are done, inject one next-level topic (pull upward sooner)
+    # If >=60% of current+below topics are done, bring in ALL next-level non-done topics as
+    # first-class candidates (was: one appended at the end, so B1 topics barely surfaced and
+    # the user stayed on A2 — feedback 2026-07-29). They compete by score/frequency like any
+    # other topic. Relative to user.level: an A1 user gets A2 topics the same way.
     if next_level and all_eligible:
         coverage = 1 - len(candidates) / len(all_eligible)
         if coverage >= 0.6:
@@ -735,10 +775,9 @@ def _select_topics_for_generation(user, db: Session, n: int = 2) -> list:
                 models.Topic.explanation_ru != "",
                 models.Topic.level_required == next_level,
                 models.Topic.id.notin_(done_ids) if done_ids else True,
+                models.Topic.slug.notin_(_SKIP_GENERATION_SLUGS),
             ).all()
-            if next_topics:
-                next_topics.sort(key=_topic_score)
-                candidates.append(next_topics[0])
+            candidates.extend(next_topics)
 
     if not candidates:
         return []
@@ -769,11 +808,12 @@ def _select_topics_for_generation(user, db: Session, n: int = 2) -> list:
     ).all():
         if tid:
             freq_by_topic[tid] += 1
-    # Re-sort candidates: least-served first (bucketed by 5s so weak-topic priority survives
-    # within an equal-frequency band), then the existing level/score priority.
+    # Re-sort candidates: least-served first (bucketed by 5s so the growth-edge priority
+    # survives within an equal-frequency band), then WEAKEST score first. Level is deliberately
+    # NOT a key here — otherwise next-level (B1) topics always sank below any A2 remnant and the
+    # learner never got pulled up (feedback 2026-07-29). Weak topic = growth edge, regardless of level.
     candidates.sort(key=lambda t: (
         freq_by_topic.get(t.id, 0) // 5,
-        _LEVEL_ORDER.index(t.level_required) if t.level_required in _LEVEL_ORDER else 99,
         _topic_score(t),
     ))
 
@@ -818,9 +858,28 @@ async def _generate_exercises(user, count: int, interest_themes_str: str, level:
     are tied to specific grammar rules. Each grammar exercise gets topic_slug + topic_title in content.
     """
     gen_level = level or user.level
-    # Rotating life-scenario nudge (feedback #164: exercises kept reusing the same
-    # setting — «wczoraj kupiłem w sklepie»). A random couple of settings per generation
-    # pushes Mistral toward varied situations without bloating the prompt.
+    # Situation settings for exercises. Prefer the USER'S interest themes (banking, travel,
+    # work…) so exercises land in contexts they care about; fall back to the generic list.
+    # KEY: one situation PER topic-batch (not the whole list) — 1 grammar + 1 situation keeps
+    # the prompt lean so Mistral doesn't choke (user's explicit constraint 2026-07-29). The
+    # topic batches previously ignored situations entirely, which is why every sentence felt
+    # generic ('на столе лежат яблоки') despite 12 themes being set.
+    try:
+        _user_themes = [t for t in json.loads((user.content_preferences.interest_themes or "[]"))
+                        if t] if user.content_preferences else []
+    except Exception:
+        _user_themes = []
+    _situation_pool = _user_themes or _LIFE_SCENARIOS
+    _sit_iter = iter(random.sample(_situation_pool, len(_situation_pool)))
+
+    def _next_situation() -> str:
+        nonlocal _sit_iter
+        try:
+            return next(_sit_iter)
+        except StopIteration:
+            _sit_iter = iter(random.sample(_situation_pool, len(_situation_pool)))
+            return next(_sit_iter)
+
     scenario_hint = ", ".join(random.sample(_LIFE_SCENARIOS, 3))
     word_def_count = max(1, count // 10)        # ~1-2 из 15
     letter_tiles_count = max(1, count // 8)     # ~2 из 15
@@ -886,6 +945,7 @@ async def _generate_exercises(user, count: int, interest_themes_str: str, level:
         title = topic_obj.title_ru or topic_obj.slug
         summary = (topic_obj.explanation_ru or "")[:900]
         focus = _TOPIC_FOCUS.get(topic_obj.slug, "")
+        situation = _next_situation()
         nl = lang_name(user.native_language)
         prompt = (
             "You generate Polish language exercises.\n"
@@ -893,6 +953,8 @@ async def _generate_exercises(user, count: int, interest_themes_str: str, level:
             f"Grammar rule topic: {title}\n\n"
             f"Rule description:\n{summary}\n\n"
             + (f"SPECIAL FOCUS: {focus}\n\n" if focus else "")
+            + f"SITUATION: set these exercises in the context of «{situation}» — the sentences "
+              "should read as if from that real-life setting (keep testing the grammar rule).\n\n"
             + prompts._EXERCISE_COMMON_RULES + "\n\n"
             f"Generate {batch_count} exercises. Types: fill_blank, multiple_choice. Mix evenly.\n"
             "ALL exercises must explicitly test this rule.\n"
@@ -933,12 +995,15 @@ async def _generate_exercises(user, count: int, interest_themes_str: str, level:
         """Generate flashcard/translate/order_words exercises about the topic's vocabulary."""
         title = topic_obj.title_ru or topic_obj.slug
         summary = (topic_obj.explanation_ru or "")[:600]
+        situation = _next_situation()
         nl = lang_name(user.native_language)
         prompt = (
             "You generate Polish language exercises.\n"
             f"Level: {gen_level}. User's native language: {nl}.\n"
             f"Topic: {title}\n\n"
             f"Rule context:\n{summary}\n\n"
+            + f"SITUATION: set the phrases in the context of «{situation}» — real-life sentences "
+              "from that setting, still using the topic's grammar.\n\n"
             + prompts._EXERCISE_COMMON_RULES + "\n\n"
             f"Generate {batch_count} exercises with vocabulary and phrases tied to this topic.\n"
             "Types (mix evenly): translate, order_words. (Do NOT generate idioms/flashcards here.)\n"
@@ -1603,10 +1668,11 @@ async def _generate_daily_pool_inner(user, db: Session, today, count: int):
     seen_vocab_ids = {uv.vocab_id for uv in db.query(models.UserVocabulary).filter(
         models.UserVocabulary.user_id == user.id
     ).all()}
-    new_vocab_words = db.query(models.Vocabulary).filter(
-        models.Vocabulary.level.in_(_eligible_vocab_levels(user.level)),
-        models.Vocabulary.id.notin_(seen_vocab_ids) if seen_vocab_ids else True,
-    ).limit(2).all()
+    # Pull vocabulary UP a level (feedback 2026-07-29: user had 333 A2 words vs 2 B1 — frozen
+    # at A2). Prefer next-level words first, then current, then the +2 stretch — but only pull
+    # up once the current level is genuinely learned (≥40 words known here), so an A1 user isn't
+    # shoved into B1 before finishing A2. Relative to user.level, no hardcoded level.
+    new_vocab_words = _pick_new_vocab(user, db, seen_vocab_ids, n=2)
     for v in new_vocab_words:
         card = _vocab_card_content(v, "new", user.native_language, 0)  # brand-new → streak 0 → tiles
         entries.append(models.DailyExercise(
