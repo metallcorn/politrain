@@ -258,6 +258,7 @@ class ProfileResponse(BaseModel):
     total_exercises: int
     total_chat_messages: int
     vocab_count: int
+    used_words: int = 0
     total_training_seconds: int = 0
     weak_spots: List[Any] = []
     created_at: datetime

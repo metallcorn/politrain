@@ -13,7 +13,7 @@ import prompts
 from services import mistral
 from services.i18n import lang_name
 from services.sm2 import calculate_next_review
-from services.gamification import add_xp, XP_CORRECT, XP_INCORRECT, check_achievements, update_daily_activity
+from services.gamification import add_xp, XP_CORRECT, XP_INCORRECT, check_achievements, update_daily_activity, count_used_words
 
 router = APIRouter(prefix="/vocabulary", tags=["vocabulary"])
 
@@ -151,6 +151,7 @@ def vocab_stats(
     pending = wrong_count + due_count + new_count
     return {
         "known_count": known_count,
+        "used_count": count_used_words(current_user.id, db),  # honest total: words used correctly anywhere
         "new_count": new_count,
         "wrong_count": wrong_count,
         "due_count": due_count,

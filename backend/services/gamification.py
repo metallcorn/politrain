@@ -1,6 +1,48 @@
+import json
+import re
 from datetime import date, timedelta
 from sqlalchemy.orm import Session
 import models
+
+# Polish word tokens (≥2 letters, Polish alphabet). Cyrillic/native-language answers don't
+# match, so they're naturally excluded from the "words used correctly" count.
+_PL_TOKEN_RE = re.compile(r"[a-ząćęłńóśźż]{2,}", re.IGNORECASE)
+
+# Exercise types where the correct_answer is Polish the user PRODUCED (so a correct answer
+# is real evidence they can use those words). judge_sentence (true/false) and flashcard
+# (answer is a translation) are excluded — no Polish production.
+_PRODUCTIVE_TYPES = ("fill_blank", "letter_tiles", "word_definition",
+                     "multiple_choice", "translate", "order_words")
+
+
+def count_used_words(user_id: int, db: Session) -> int:
+    """Distinct Polish words the user has answered CORRECTLY across all exercise types —
+    the honest 'vocabulary size' (2026-07-29). The card-based known_count only sees words
+    drilled as vocab cards and badly undercounts (360 vs the ~hundreds actually used)."""
+    words: set[str] = set()
+    # words known via vocab cards (their dictionary forms)
+    for (polish,) in db.query(models.Vocabulary.polish).join(
+        models.UserVocabulary, models.UserVocabulary.vocab_id == models.Vocabulary.id,
+    ).filter(
+        models.UserVocabulary.user_id == user_id,
+        models.UserVocabulary.correct_streak >= 1,
+    ).all():
+        for tok in _PL_TOKEN_RE.findall(polish or ""):
+            words.add(tok.lower())
+    # words produced correctly in real exercises
+    for (content,) in db.query(models.DailyExercise.content).filter(
+        models.DailyExercise.user_id == user_id,
+        models.DailyExercise.is_correct == True,  # noqa: E712
+        models.DailyExercise.exercise_type.in_(_PRODUCTIVE_TYPES),
+    ).all():
+        try:
+            ca = json.loads(content).get("correct_answer") or ""
+        except Exception:
+            continue
+        if isinstance(ca, str):
+            for tok in _PL_TOKEN_RE.findall(ca):
+                words.add(tok.lower())
+    return len(words)
 
 XP_CORRECT = 10
 XP_INCORRECT = 2

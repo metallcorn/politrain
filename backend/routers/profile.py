@@ -9,7 +9,7 @@ from database import get_db
 from auth import get_current_user
 import models
 import schemas
-from services.gamification import get_game_level, calculate_b1_progress
+from services.gamification import get_game_level, calculate_b1_progress, count_used_words
 
 router = APIRouter(prefix="/profile", tags=["profile"])
 
@@ -41,6 +41,9 @@ def get_profile(
         models.UserVocabulary.user_id == current_user.id,
         models.UserVocabulary.correct_streak >= 1,
     ).count()
+    # Honest total: distinct Polish words used correctly anywhere, not just vocab cards
+    # (2026-07-29 — card count of 360 badly undercounted vs ~1175 actually used).
+    used_words = count_used_words(current_user.id, db)
 
     weak_spots = db.query(models.UserTopicProgress).filter(
         models.UserTopicProgress.user_id == current_user.id,
@@ -74,6 +77,7 @@ def get_profile(
         total_exercises=total_exercises,
         total_chat_messages=total_chat,
         vocab_count=vocab_count,
+        used_words=used_words,
         total_training_seconds=current_user.total_training_seconds or 0,
         weak_spots=weak_list,
         created_at=current_user.created_at,

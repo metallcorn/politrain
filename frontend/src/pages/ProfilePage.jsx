@@ -202,9 +202,9 @@ export default function ProfilePage() {
           <p className="text-xl font-bold text-primary-800">{profile?.total_exercises || 0}</p>
           <p className="text-xs text-gray-500">Упражнений</p>
         </Card>
-        <Card className="text-center py-3">
-          <p className="text-xl font-bold text-primary-800">{profile?.vocab_count || 0}</p>
-          <p className="text-xs text-gray-500">Слов</p>
+        <Card className="text-center py-3" title={`${profile?.vocab_count || 0} на карточках (интервальное повторение)`}>
+          <p className="text-xl font-bold text-primary-800">{profile?.used_words ?? profile?.vocab_count ?? 0}</p>
+          <p className="text-xs text-gray-500">Слов используешь</p>
         </Card>
         <Card className="text-center py-3">
           <p className="text-xl font-bold text-primary-800">{profile?.total_chat_messages || 0}</p>
