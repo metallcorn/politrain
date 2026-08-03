@@ -231,6 +231,11 @@ class SessionRatingRequest(BaseModel):
     rating_id: Optional[int] = None  # update an already-sent rating (star click sends immediately, comment follows)
 
 
+class RetryAnswerRequest(BaseModel):
+    daily_exercise_id: int
+    user_answer: str = ""
+
+
 class ExplainRequest(BaseModel):
     exercise_type: str
     question: str

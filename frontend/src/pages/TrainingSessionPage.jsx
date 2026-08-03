@@ -44,6 +44,10 @@ export default function TrainingSessionPage() {
   const [loadError, setLoadError] = useState(false)
   const [xpFloat, setXpFloat] = useState(null)
   const [leveledUp, setLeveledUp] = useState(null)  // CEFR level from an auto-promotion
+  // End-of-session correction round (Duolingo-style): retry the ones you got wrong.
+  const [correctionMode, setCorrectionMode] = useState(false)
+  const [correctionIndex, setCorrectionIndex] = useState(0)
+  const wrongListRef = useRef([])  // exercises answered wrong this session (retry-eligible)
   const [aiOpen, setAiOpen] = useState(false)
   const [aiTexts, setAiTexts] = useState({ 1: null, 2: null })
   const [aiLevel, setAiLevel] = useState(1)
@@ -126,6 +130,9 @@ export default function TrainingSessionPage() {
     setSessionDone(false)
     setDailyAlreadyDone(false)
     setAllVocabDone(false)
+    setCorrectionMode(false)
+    setCorrectionIndex(0)
+    wrongListRef.current = []
     setExercises([])
     setCurrent(0)
     setResult(null)
@@ -133,12 +140,34 @@ export default function TrainingSessionPage() {
     loadSession()
   }, [mode, refreshKey])
 
-  const currentEx = exercises[current]
+  // Exercise types worth re-typing for memory (skip judge=binary, flashcard=self-graded, reading=multi)
+  const RETRY_TYPES = ['fill_blank', 'translate', 'letter_tiles', 'multiple_choice', 'word_definition', 'order_words']
+  const currentEx = correctionMode ? wrongListRef.current[correctionIndex] : exercises[current]
 
   const handleAnswer = async ({ user_answer, quality, hint_used, autoAdvance }) => {
     if (submitting) return
     setSubmitting(true)
     lastUserAnswerRef.current = user_answer || ''
+
+    // Correction round: check via retry-answer (half XP, error record untouched).
+    if (correctionMode) {
+      try {
+        const res = await trainingApi.retryAnswer({
+          daily_exercise_id: currentEx.daily_exercise_id,
+          user_answer: user_answer || '',
+        })
+        if (res.data.xp_earned > 0) {
+          setStats((s) => ({ ...s, xp: s.xp + res.data.xp_earned }))
+          setXpFloat({ id: Date.now(), amount: res.data.xp_earned })
+        }
+        setResult({ is_correct: res.data.is_correct, correct_answer: res.data.correct_answer })
+      } catch {
+        addToast('Ошибка проверки ответа', 'error')
+      } finally {
+        setSubmitting(false)
+      }
+      return
+    }
 
     try {
       const payload = {
@@ -160,6 +189,10 @@ export default function TrainingSessionPage() {
       }
       if (res.data.leveled_up_to) {
         setLeveledUp(res.data.leveled_up_to)  // auto-promotion — show congrats
+      }
+      // Collect a wrong, retry-eligible exercise for the end-of-session correction round.
+      if (!res.data.is_correct && currentEx.daily_exercise_id && RETRY_TYPES.includes(currentEx.type)) {
+        wrongListRef.current.push(currentEx)
       }
       if (autoAdvance) {
         handleNext()
@@ -183,8 +216,24 @@ export default function TrainingSessionPage() {
   const handleNext = () => {
     setResult(null)
     resetAiState()
+    if (correctionMode) {
+      // advancing through the correction round
+      if (correctionIndex + 1 >= wrongListRef.current.length) {
+        setCorrectionMode(false)
+        setSessionDone(true)
+      } else {
+        setCorrectionIndex((i) => i + 1)
+      }
+      return
+    }
     if (current + 1 >= exercises.length) {
-      setSessionDone(true)
+      // Session over → offer the correction round if anything was wrong.
+      if (wrongListRef.current.length > 0) {
+        setCorrectionIndex(0)
+        setCorrectionMode(true)
+      } else {
+        setSessionDone(true)
+      }
     } else {
       setCurrent((c) => c + 1)
     }
@@ -230,6 +279,11 @@ export default function TrainingSessionPage() {
   const handleRegenerate = () => fetchAiLevel(aiLevel, true)
 
   const handleSkip = () => {
+    // In the correction round, skipping just moves on — the error record is already saved.
+    if (correctionMode) {
+      handleNext()
+      return
+    }
     // Mark as completed server-side so it doesn't reappear in the next session
     if (currentEx?.daily_exercise_id) {
       trainingApi.answer({
@@ -237,13 +291,7 @@ export default function TrainingSessionPage() {
         daily_exercise_id: currentEx.daily_exercise_id,
       }).catch(() => {})
     }
-    setResult(null)
-    resetAiState()
-    if (current + 1 >= exercises.length) {
-      setSessionDone(true)
-    } else {
-      setCurrent((c) => c + 1)
-    }
+    handleNext()
   }
 
   const handleReportSubmit = async () => {
@@ -262,13 +310,7 @@ export default function TrainingSessionPage() {
       setReportOpen(false)
       setReportComment('')
       // Advance without submitting an answer — report endpoint already marks the exercise
-      setResult(null)
-      resetAiState()
-      if (current + 1 >= exercises.length) {
-        setSessionDone(true)
-      } else {
-        setCurrent((c) => c + 1)
-      }
+      handleNext()
     }
   }
 
@@ -437,14 +479,27 @@ export default function TrainingSessionPage() {
 
   return (
     <div className="flex flex-col gap-4">
+      {correctionMode && (
+        <div className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-2 text-sm text-amber-800 flex items-center gap-2 animate-fade-in">
+          <span>🔁</span>
+          <span>Исправь ошибки — второй шанс. Верный ответ = +половина XP (ошибка всё равно вернётся на повторение).</span>
+        </div>
+      )}
       <div className="flex items-center gap-3">
         <button onClick={() => navigate('/training')} className="text-gray-400 hover:text-gray-600 transition-colors">
           <ArrowLeft size={20} />
         </button>
         <div className="flex-1">
-          <ProgressBar value={current} max={exercises.length} />
+          <ProgressBar
+            value={correctionMode ? correctionIndex : current}
+            max={correctionMode ? wrongListRef.current.length : exercises.length}
+          />
         </div>
-        <span className="text-sm text-gray-500 flex-shrink-0">{current + 1}/{exercises.length}</span>
+        <span className="text-sm text-gray-500 flex-shrink-0">
+          {correctionMode
+            ? `${correctionIndex + 1}/${wrongListRef.current.length}`
+            : `${current + 1}/${exercises.length}`}
+        </span>
       </div>
 
       <div className="text-xs text-gray-400 uppercase tracking-wide flex items-center gap-1.5">
@@ -469,7 +524,7 @@ export default function TrainingSessionPage() {
         )}
       </div>
 
-      <div key={current} className="animate-slide-in">
+      <div key={correctionMode ? `c${correctionIndex}` : current} className="animate-slide-in">
         <div className={result && !result.is_correct ? 'animate-shake' : undefined}>
           <div className="card relative">
             {result?.is_correct && (
@@ -493,7 +548,9 @@ export default function TrainingSessionPage() {
       {result && (
         <div className="flex flex-col gap-2">
           <Button onClick={handleNext} className="w-full">
-            {current + 1 >= exercises.length ? 'Завершить сессию' : 'Следующее →'}
+            {correctionMode
+              ? (correctionIndex + 1 >= wrongListRef.current.length ? 'Завершить сессию' : 'Следующая ошибка →')
+              : (current + 1 >= exercises.length ? 'Завершить сессию' : 'Следующее →')}
           </Button>
           <button
             onClick={handleAskAI}

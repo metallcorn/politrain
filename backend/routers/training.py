@@ -1296,6 +1296,53 @@ async def explain_exercise(
     return {"text": text, "cached": False}
 
 
+@router.post("/retry-answer")
+async def retry_answer(
+    body: schemas.RetryAnswerRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """End-of-session correction round (Duolingo-style, user idea 2026-08-05): re-answer an
+    exercise you got wrong. Awards HALF XP if now correct, but does NOT touch the exercise's
+    error record — it stays wrong and still returns via SRS error-review. Immediate corrective
+    repetition strengthens memory WITHOUT skipping the later spaced review. Read-only on the DE."""
+    de = db.query(models.DailyExercise).filter(
+        models.DailyExercise.id == body.daily_exercise_id,
+        models.DailyExercise.user_id == current_user.id,
+    ).first()
+    if not de:
+        return {"is_correct": False, "xp_earned": 0}
+    try:
+        content = json.loads(de.content)
+    except Exception:
+        return {"is_correct": False, "xp_earned": 0}
+    correct_answer = content.get("correct_answer", "")
+    ex_type = content.get("type", "")
+
+    if ex_type == "translate":
+        is_correct, _ = _check_answer(body.user_answer, correct_answer)
+        if not is_correct:
+            is_correct = await _check_translation(
+                body.user_answer, correct_answer, content.get("question", ""),
+                current_user, focus=content.get("topic_title") or content.get("hint") or "",
+            )
+    else:
+        is_correct, _ = _check_answer(body.user_answer, correct_answer)
+        if not is_correct and ex_type == "order_words":
+            ref = correct_answer.split(' / ')[0].strip()
+            if _same_word_multiset(body.user_answer, ref):
+                is_correct = await _check_word_order(
+                    body.user_answer, ref, content.get("translation", ""), current_user
+                )
+
+    xp = 0
+    if is_correct:
+        xp = add_xp(current_user, db, max(1, XP_CORRECT // 2))  # half XP for a correction
+        update_daily_activity(current_user.id, db, xp_earned=xp)
+        db.commit()
+    return {"is_correct": is_correct, "xp_earned": xp, "correct_answer": correct_answer}
+
+
 @router.post("/session-complete")
 def session_complete(
     data: schemas.SessionCompleteRequest,

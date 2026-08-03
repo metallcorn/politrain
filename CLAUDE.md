@@ -625,6 +625,11 @@ backend/
                      статистика, жалобы, _vocab_card_content/_mastered_exercise_ids — импортируются из services.generation,
                      POST /training/explain — AI-объяснение ответа (кешируется в AIExplanationCache); принимает translation для перевода предложения,
                      POST /training/session-complete — накопление total_training_seconds + ачивки,
+                     POST /training/retry-answer — раунд исправления в конце сессии (идея юзера 2026-08-05, как Duolingo):
+                       переответ на ошибочное задание, +ПОЛОВИНА XP если верно, но is_correct/SRS НЕ трогаются —
+                       ошибка остаётся и вернётся по SRS (немедленное закрепление + позднее интервальное повторение);
+                       фронт: TrainingSessionPage копит ошибки (RETRY_TYPES: fill_blank/translate/letter_tiles/mc/word_def/order_words),
+                       перед SessionResult показывает раунд «Исправь ошибки» (одна попытка), баннер + пол-XP,
                      POST /training/session-rating — оценка сессии 1-5 + комментарий + список exercise_ids;
                      ВАЖНО: все имена из validators/generation РЕэкспортируются через import в training.py —
                      `from routers.training import X` продолжает работать (тестовые сниппеты не ломать)
