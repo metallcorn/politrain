@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { profileApi, authApi } from '../api'
 import { useAuthStore } from '../store'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import Card from '../components/ui/Card'
 import ProgressBar from '../components/ui/ProgressBar'
 import AchievementBadge from '../components/gamification/AchievementBadge'
@@ -253,15 +253,23 @@ export default function ProfilePage() {
       {/* Leaderboard */}
       {leaderboardData && <Leaderboard data={leaderboardData} />}
 
-      {/* Achievements */}
+      {/* Achievements — compact: recent earned + a couple upcoming + "see all" */}
       {achievements.length > 0 && (
         <div>
-          <h2 className="font-semibold text-gray-800 mb-3">
-            Достижения ({earnedAchievements.length}/{achievements.length})
-          </h2>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="font-semibold text-gray-800">
+              Достижения ({earnedAchievements.length}/{achievements.length})
+            </h2>
+            <Link to="/achievements" className="text-sm text-primary-700 font-medium hover:underline">
+              Смотреть все →
+            </Link>
+          </div>
           <div className="grid grid-cols-3 gap-2">
-            {earnedAchievements.map((a) => <AchievementBadge key={a.id} achievement={a} earned />)}
-            {lockedAchievements.map((a) => <AchievementBadge key={a.id} achievement={a} earned={false} />)}
+            {[...earnedAchievements]
+              .sort((a, b) => new Date(b.earned_at || 0) - new Date(a.earned_at || 0))
+              .slice(0, 6)
+              .map((a) => <AchievementBadge key={a.id} achievement={a} earned />)}
+            {lockedAchievements.slice(0, 3).map((a) => <AchievementBadge key={a.id} achievement={a} earned={false} />)}
           </div>
         </div>
       )}

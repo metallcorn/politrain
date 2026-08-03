@@ -15,6 +15,7 @@ import ChatSessionPage from './pages/ChatSessionPage'
 import ExamPage from './pages/ExamPage'
 import ExamTaskPage from './pages/ExamTaskPage'
 import ProfilePage from './pages/ProfilePage'
+import AchievementsPage from './pages/AchievementsPage'
 import AdminPage from './pages/AdminPage'
 import Toast from './components/ui/Toast'
 import Spinner from './components/ui/Spinner'
@@ -71,6 +72,7 @@ export default function App() {
           <Route path="/exam" element={<ExamPage />} />
           <Route path="/exam/:type" element={<ExamTaskPage />} />
           <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/achievements" element={<AchievementsPage />} />
           <Route path="/admin" element={<AdminPage />} />
         </Route>
       </Routes>
