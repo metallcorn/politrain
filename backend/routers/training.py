@@ -1012,6 +1012,27 @@ def report_generated_exercise(
             for pe in affected.values():
                 pe.report_count = (pe.report_count or 0) + 1
                 pe.is_active = False
+            # Deactivating the pool entry stops NEW draws, but the SAME broken content lives
+            # as separate DailyExercise rows in this user's queues — error-retry copies,
+            # review_ai, scheduled-for-review — and kept coming back after a report (#187:
+            # «я репортнул, почему оно снова?»). Purge every copy by normalized question:
+            # out of errors (is_correct=True) and out of review (next_review=None).
+            if q_norm:
+                candidates = db.query(models.DailyExercise).filter(
+                    models.DailyExercise.user_id == current_user.id,
+                    models.DailyExercise.id != de.id,
+                    (models.DailyExercise.is_correct == False)  # noqa: E712
+                    | (models.DailyExercise.next_review.isnot(None))
+                    | (models.DailyExercise.is_completed == False),  # noqa: E712
+                ).all()
+                for cand in candidates:
+                    try:
+                        if _norm(json.loads(cand.content).get("question", "")) == q_norm:
+                            cand.is_correct = True
+                            cand.is_completed = True
+                            cand.next_review = None
+                    except Exception:
+                        pass
     elif body.exercise_id:
         ex = db.query(models.Exercise).filter(models.Exercise.id == body.exercise_id).first()
         if ex:
