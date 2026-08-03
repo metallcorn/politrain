@@ -229,10 +229,11 @@ export default function ProfilePage() {
       <Card>
         <div className="flex items-center gap-2 mb-2">
           <Target size={18} className="text-primary-800" />
-          <span className="font-semibold text-gray-800">Прогресс к B1</span>
-          <span className="ml-auto font-bold text-primary-800">{profile?.progress_to_b1}%</span>
+          <span className="font-semibold text-gray-800">Прогресс к {profile?.next_level_target || 'B1'}</span>
+          <span className="ml-auto font-bold text-primary-800">{Math.round(profile?.next_level_percent ?? profile?.progress_to_b1 ?? 0)}%</span>
         </div>
-        <ProgressBar value={profile?.progress_to_b1 || 0} max={100} />
+        <ProgressBar value={profile?.next_level_percent ?? profile?.progress_to_b1 ?? 0} max={100} />
+        <p className="text-xs text-gray-400 mt-1">Освой ≥80% тем {profile?.next_level_target || 'B1'} — и уровень повысится сам</p>
       </Card>
 
       {/* Activity dashboard */}

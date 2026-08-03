@@ -39,6 +39,7 @@ from services.validators import (
     _dedup_question_key,
 )
 from services.i18n import lang_name, ui
+from services.gamification import level_mastery_fraction
 
 _LEVEL_ORDER = ["A0", "A1", "A2", "B1", "B2", "C1", "C2"]
 
@@ -834,6 +835,22 @@ def _select_topics_for_generation(user, db: Session, n: int = 2) -> list:
     used_ids = set()
     fresh = [t for t in candidates if t.id not in recent_ids]
     stale = [t for t in candidates if t.id in recent_ids]
+
+    # HARD focus on the level being climbed (user request 2026-08-04: «должно жёстко
+    # тренить на этот уровень»). While climbing next_level (its mastery in 0..0.8), reserve
+    # at least ceil(n*0.7) topic slots for next-level topics — the rest can be lower-level
+    # review. Without this, spaced review of done A0-A2 topics diluted the B1 push.
+    if next_level:
+        nl_frac = level_mastery_fraction(user.id, db, next_level)
+        if nl_frac < 0.8:
+            import math as _math
+            reserve = min(n, _math.ceil(n * 0.7))
+            nl_candidates = [t for t in candidates if t.level_required == next_level]  # already freq/score sorted
+            for t in nl_candidates:
+                if len(chosen) >= reserve:
+                    break
+                if t.id not in used_ids:
+                    chosen.append(t); used_ids.add(t.id)
 
     # fresh first; then MASTERED topics coming back for spaced review; recently-covered
     # (stale) topics are the LAST resort — with few non-done topics left, the old order
