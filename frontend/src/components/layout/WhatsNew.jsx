@@ -6,6 +6,13 @@ import { Gift, X, Sparkles } from 'lucide-react'
 // user has opened is stored in localStorage, and a red dot shows while unseen ids exist.
 const CHANGELOG = [
   {
+    id: '2026-08-03',
+    title: 'Лестница до B2',
+    items: [
+      'Добавили 8 тем уровня B2: причастия, страдательный залог, отглагольные существительные, сложные условные, словообразование, устойчивые сочетания, формальный стиль, тонкости вида. Теперь есть куда расти после B1.',
+    ],
+  },
+  {
     id: '2026-07-30',
     title: 'Честный счётчик слов',
     items: [

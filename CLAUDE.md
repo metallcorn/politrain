@@ -762,7 +762,8 @@ backend/
 - **Приоритет тем**: `_select_topics_for_generation` при coverage≥60% подмешивает ВСЕ non-done темы следующего уровня как полноценных кандидатов (было: одна в хвост); частотный sort БЕЗ уровня как ключа (иначе B1 всегда тонул под остатками A2)
 - **Ситуации в топик-батчи**: `_batch_for_topic`/`_batch_for_topic_lexical` получают ОДНУ ротирующуюся ситуацию из `user.content_preferences.interest_themes` (1 грамматика + 1 ситуация — промт не раздувать!). Раньше топик-батчи игнорировали интерес-темы → все предложения generic
 - **Темы B1**: 11 штук (было 5). +6 написаны ВРУЧНУЮ (не Мистралем — точность): relative-clauses, conjunctions, verb-prefixes, impersonal, adverb-comparison, reported-speech. Скрипт `scripts/add_b1_topics.py` (идемпотентный). Мистраль — только проверочные задания по этим статьям
-- TODO: аналогично создать темы B2 (сейчас 0) отдельной пачкой
+- **Темы B2**: 8 штук (`scripts/add_b2_topics.py`, вручную): participles, passive-voice, verbal-nouns, complex-conditional, word-formation, collocations, formal-register, aspect-advanced. Лестница ровная: A0(5)→A1(9)→A2(9)→B1(11)→B2(8). Выдаются только когда user.level=B1 (relative), A2-юзер их не видит
+- `calculate_b1_progress` считает ТОЛЬКО ≤B1 (`_TO_B1_LEVELS`), B2 не разбавляет; частичный зачёт по score (тема на 0.6 → 0.6, done → 1.0) — шкала двигается при улучшении, не только при флипе
 
 ### Логика словаря
 - `correct_streak >= 1` → слово "знакомо", считается в vocab_count
