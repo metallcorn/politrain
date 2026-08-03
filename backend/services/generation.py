@@ -836,26 +836,29 @@ def _select_topics_for_generation(user, db: Session, n: int = 2) -> list:
     fresh = [t for t in candidates if t.id not in recent_ids]
     stale = [t for t in candidates if t.id in recent_ids]
 
-    # HARD focus on the level being climbed (user request 2026-08-04: «должно жёстко
-    # тренить на этот уровень»). While climbing next_level (its mastery in 0..0.8), reserve
-    # at least ceil(n*0.7) topic slots for next-level topics — the rest can be lower-level
-    # review. Without this, spaced review of done A0-A2 topics diluted the B1 push.
-    if next_level:
-        nl_frac = level_mastery_fraction(user.id, db, next_level)
-        if nl_frac < 0.8:
-            import math as _math
-            reserve = min(n, _math.ceil(n * 0.7))
-            nl_candidates = [t for t in candidates if t.level_required == next_level]  # already freq/score sorted
-            for t in nl_candidates:
-                if len(chosen) >= reserve:
-                    break
-                if t.id not in used_ids:
-                    chosen.append(t); used_ids.add(t.id)
+    # HARD focus on the level being climbed (user 2026-08-04: «жёстко тренить на этот
+    # уровень»), BUT don't drop spaced review of past levels — mastered topics can decay
+    # («вдруг просядут»). While climbing next_level (mastery <0.8), reserve most slots for
+    # it; ~1/3 of the time give up ONE slot to a mastered topic that's due for review
+    # (done_review = not covered in the last 7 days), so old levels stay fresh.
+    review_slot = False
+    if next_level and level_mastery_fraction(user.id, db, next_level) < 0.8:
+        import math as _math
+        reserve = min(n, _math.ceil(n * 0.7))
+        review_slot = bool(done_review) and random.random() < 0.35
+        if review_slot and reserve >= n:
+            reserve = max(1, n - 1)  # free one slot for spaced review
+        nl_candidates = [t for t in candidates if t.level_required == next_level]  # freq/score sorted
+        for t in nl_candidates:
+            if len(chosen) >= reserve:
+                break
+            if t.id not in used_ids:
+                chosen.append(t); used_ids.add(t.id)
 
-    # fresh first; then MASTERED topics coming back for spaced review; recently-covered
-    # (stale) topics are the LAST resort — with few non-done topics left, the old order
-    # served vocative/numbers-dates several days in a row (feedback #149/#150)
-    for pool in (fresh, done_review, stale):
+    # Fill remaining slots. When we freed a review slot, put done_review FIRST so a mastered
+    # topic actually comes back; otherwise fresh (weak) first, mastered review next, stale last.
+    fill_order = (done_review, fresh, stale) if review_slot else (fresh, done_review, stale)
+    for pool in fill_order:
         for t in pool:
             if t.id not in used_ids:
                 chosen.append(t)
