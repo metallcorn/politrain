@@ -9,6 +9,7 @@ import schemas
 import prompts
 from services import mistral
 from services.i18n import lang_name
+from services.generation import build_validated_reading, build_exam_grammar
 
 router = APIRouter(prefix="/exam", tags=["exam"])
 
@@ -88,34 +89,23 @@ async def get_task(
         return {"status": "not_implemented", "message": "Скоро будет доступно"}
 
     if task_type == "reading":
-        import random
-        topic = random.choice(READING_TOPICS)
+        # Validated pipeline (2026-08-06): same label-stripping / letter-mapping / well-formed
+        # filtering as the daily reading mode — the exam no longer serves raw Mistral output.
         try:
-            raw = await mistral.simple_prompt(
-                system="You are a Polish language reading comprehension task generator. Respond only with valid JSON.",
-                user=prompts.READING_TEXT_PROMPT.format(
-                    topic=topic,
-                    native_language=lang_name(current_user.native_language),
-                ),
-                temperature=0.7,
-                max_tokens=2000,
-            )
-            data = await mistral.parse_json_response(raw)
+            data = await build_validated_reading(current_user, db)
+            if not data:
+                return {"type": "reading", "data": None, "error": "AI временно недоступен"}
             return {"type": "reading", "data": data}
         except Exception:
             return {"type": "reading", "data": None, "error": "AI временно недоступен"}
 
     if task_type == "grammar":
+        # Validated pipeline: pool-first (already past all validators/dedup) + validated
+        # top-up. No more raw GRAMMAR_EXAM_PROMPT with its wrong-answer/meta-question bugs.
         try:
-            raw = await mistral.simple_prompt(
-                system="You are a Polish grammar test generator. Respond only with valid JSON array.",
-                user=prompts.GRAMMAR_EXAM_PROMPT.format(
-                    native_language=lang_name(current_user.native_language),
-                ),
-                temperature=0.5,
-                max_tokens=3000,
-            )
-            questions = await mistral.parse_json_response(raw)
+            questions = await build_exam_grammar(current_user, db, count=12)
+            if not questions:
+                return {"type": "grammar", "questions": [], "error": "AI временно недоступен"}
             return {"type": "grammar", "questions": questions}
         except Exception:
             return {"type": "grammar", "questions": [], "error": "AI временно недоступен"}
@@ -160,7 +150,9 @@ async def submit_task(
         questions = body.get("questions_data", [])
         correct = 0
         for i, q in enumerate(questions):
-            if i < len(answers) and answers[i] == q.get("correct"):
+            # validated reading exposes 'correct_answer' (old raw prompt used 'correct')
+            expected = q.get("correct_answer", q.get("correct", ""))
+            if i < len(answers) and str(answers[i]).strip() == str(expected).strip():
                 correct += 1
         total = len(questions)
         return {

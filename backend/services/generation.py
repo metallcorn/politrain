@@ -1490,9 +1490,68 @@ async def _generate_reading(user, db: Session, today, level: str = None):
         return await _generate_reading_inner(user, db, today, level)
 
 
-async def _generate_reading_inner(user, db: Session, today, level: str = None):
-    """Generate one reading-comprehension passage + 3 MC questions (source='reading').
-    A single DailyExercise of type='reading'; scored as a unit in submit_answer."""
+async def build_exam_grammar(user, db: Session, level: str = None, count: int = 12) -> list:
+    """Validated grammar questions for the self-test exam. Draws fill_blank/multiple_choice
+    from the shared pool (already past all validators) and tops up with a validated fresh
+    batch if short. Everything goes through _validate_batch — the exam gets the SAME quality
+    as practice, not raw Mistral (user concern 2026-08-06)."""
+    gen_level = level or user.level
+    out = []
+    # multiple_choice only — the exam UI renders option buttons; a fill_blank (no options)
+    # would show a question with no way to answer.
+    # 1. pool-first: active validated MC at this level
+    pool_rows = db.query(models.ExercisePool).filter(
+        models.ExercisePool.level == gen_level,
+        models.ExercisePool.is_active == True,  # noqa: E712
+        models.ExercisePool.exercise_type == "multiple_choice",
+    ).order_by(func.random()).limit(count * 3).all()
+    seen_q = set()
+    for p in pool_rows:
+        if len(out) >= count:
+            break
+        try:
+            d = json.loads(p.content)
+        except Exception:
+            continue
+        if not d.get("options"):
+            continue
+        qn = _norm(d.get("question", ""))
+        if qn in seen_q:
+            continue
+        seen_q.add(qn)
+        out.append({
+            "type": "multiple_choice", "question": d.get("question", ""),
+            "options": d.get("options"), "correct_answer": d.get("correct_answer", ""),
+            "hint": d.get("hint"), "explanation": d.get("explanation"),
+        })
+    # 2. top up with a freshly generated + VALIDATED batch if the pool was short
+    if len(out) < count:
+        deficit = count - len(out)
+        topics = _select_topics_for_generation(user, db)
+        themes = _select_interest_themes(user.content_preferences)
+        raw = await _generate_exercises(user, deficit * 2, themes, level=gen_level,
+                                        topics=topics or None, db=db)
+        validated = _validate_batch(raw, user, db, label="exam")
+        for item in validated:
+            if len(out) >= count:
+                break
+            if item.get("type") == "multiple_choice" and item.get("options"):
+                qn = _norm(item.get("question", ""))
+                if qn in seen_q:
+                    continue
+                seen_q.add(qn)
+                out.append({
+                    "type": "multiple_choice", "question": item.get("question", ""),
+                    "options": item.get("options"), "correct_answer": item.get("correct_answer", ""),
+                    "hint": item.get("hint"), "explanation": item.get("explanation"),
+                })
+    return out
+
+
+async def build_validated_reading(user, db: Session, level: str = None) -> dict | None:
+    """Generate + validate ONE reading passage and return the dict (no DB write). Shared by
+    the daily reading mode AND the self-test exam so both get the same label-stripping /
+    letter-mapping / well-formed-question filtering. Returns None if generation failed."""
     gen_level = level or user.level
     themes = _select_interest_themes(user.content_preferences)
     prompt = prompts.READING_PROMPT.format(
@@ -1511,13 +1570,13 @@ async def _generate_reading_inner(user, db: Session, today, level: str = None):
         except Exception as e:
             print(f"[reading] {model_name} failed for user {user.id}: {type(e).__name__}: {e}")
     if not raw:
-        return
+        return None
     try:
         item = await mistral.parse_json_response(raw)
     except Exception:
-        return
+        return None
     if not isinstance(item, dict) or not item.get("text") or not isinstance(item.get("questions"), list):
-        return
+        return None
     # Keep only well-formed questions. Mistral often labels options ("B. ...") and returns
     # correct_answer as a bare letter ("B") — strip labels and map the letter to its option.
     def _strip_label(o):
@@ -1549,15 +1608,24 @@ async def _generate_reading_inner(user, db: Session, today, level: str = None):
             "explanation": q.get("explanation") if isinstance(q.get("explanation"), str) else None,
         })
     if len(qs) < 2:
-        return
+        return None
     item["questions"] = qs
     item["type"] = "reading"
+    return item
+
+
+async def _generate_reading_inner(user, db: Session, today, level: str = None):
+    """Generate one reading-comprehension passage + 3 MC questions (source='reading').
+    A single DailyExercise of type='reading'; scored as a unit in submit_answer."""
+    item = await build_validated_reading(user, db, level)
+    if not item:
+        return
     db.add(models.DailyExercise(
         user_id=user.id, date=today, exercise_type="reading",
         content=json.dumps(item, ensure_ascii=False), source="reading",
     ))
     db.commit()
-    print(f"[reading] generated passage with {len(qs)} questions for user {user.id}")
+    print(f"[reading] generated passage with {len(item['questions'])} questions for user {user.id}")
 
 
 async def _generate_daily_pool(user, db: Session, today, count: int):
