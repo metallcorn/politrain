@@ -80,6 +80,20 @@ export default function DashboardPage() {
 
       {profile && <ProgressToB1 progress={profile.next_level_percent ?? profile.progress_to_b1} target={profile.next_level_target || 'B1'} />}
 
+      {/* Self-test — voluntary exam (Polish cert style; listening/speaking are stubs) */}
+      <Link to="/exam">
+        <Card className="border-purple-100 hover:border-purple-300 transition-colors">
+          <div className="flex items-center gap-3">
+            <div className="text-2xl">🎓</div>
+            <div className="flex-1 min-w-0">
+              <p className="font-medium text-gray-800">Испытай себя</p>
+              <p className="text-sm text-gray-500">Пробный экзамен по польскому — проверь уровень без риска</p>
+            </div>
+            <span className="text-gray-300">→</span>
+          </div>
+        </Card>
+      </Link>
+
       {/* Weak spots */}
       {profile?.weak_spots?.length > 0 && (
         <Card className="border-orange-100">

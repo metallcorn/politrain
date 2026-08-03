@@ -166,10 +166,21 @@ def check_achievements(user: models.User, db: Session) -> list[models.Achievemen
         elif ach.condition_type == "xp":
             unlocked = user.xp >= ach.condition_value
         elif ach.condition_type == "vocab_count":
-            count = db.query(models.UserVocabulary).filter(
-                models.UserVocabulary.user_id == user.id
+            # Consistent with the number shown to the user (used_words), not the tiny card
+            # count — otherwise «1000 слов есть, а ачивка 500 не взята» (bug 2026-08-05).
+            unlocked = count_used_words(user.id, db) >= ach.condition_value
+        elif ach.condition_type == "exercises_done":
+            count = db.query(models.DailyExercise).filter(
+                models.DailyExercise.user_id == user.id,
+                models.DailyExercise.is_completed == True,  # noqa: E712
+            ).count() + db.query(models.UserExerciseHistory).filter(
+                models.UserExerciseHistory.user_id == user.id,
             ).count()
             unlocked = count >= ach.condition_value
+        elif ach.condition_type == "level_reached":
+            # condition_value encodes level index: A0=0,A1=1,A2=2,B1=3,B2=4,C1=5,C2=6
+            cur_idx = _LEVEL_ORDER.index(user.level) if user.level in _LEVEL_ORDER else 0
+            unlocked = cur_idx >= ach.condition_value
         elif ach.condition_type == "chat_messages":
             count = db.query(models.ChatMessage).join(models.ChatSession).filter(
                 models.ChatSession.user_id == user.id,

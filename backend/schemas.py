@@ -166,6 +166,7 @@ class AnswerResponse(BaseModel):
     xp_earned: int = 0
     diacritic_hint: bool = False
     leveled_up_to: Optional[str] = None  # new CEFR level if this answer triggered a promotion
+    new_achievements: list = []  # achievements unlocked by this answer (title/description/icon/xp)
 
 
 class TrainingSessionResponse(BaseModel):

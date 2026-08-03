@@ -958,10 +958,12 @@ async def submit_answer(
         xp = add_xp(current_user, db, base_xp)
     update_streak(current_user, db)
     update_daily_activity(current_user.id, db, xp_earned=xp, exercises_done=1)
-    check_achievements(current_user, db)
+    new_achs = check_achievements(current_user, db)
     # Auto-level: mastering ≥80% of the next level's topics promotes you (user rule 2026-08-03,
     # no exam gate). Checked here so promotion lands right after the answer that crossed it.
     leveled_up_to = maybe_promote_level(current_user, db)
+    if leveled_up_to:
+        new_achs += check_achievements(current_user, db)  # level-reached achievement may unlock
     db.commit()
 
     return schemas.AnswerResponse(
@@ -971,6 +973,10 @@ async def submit_answer(
         xp_earned=xp,
         diacritic_hint=diacritic_hint,
         leveled_up_to=leveled_up_to,
+        new_achievements=[
+            {"title": a.title_ru, "description": a.description_ru, "icon": a.icon, "xp": a.xp_reward}
+            for a in new_achs
+        ],
     )
 
 

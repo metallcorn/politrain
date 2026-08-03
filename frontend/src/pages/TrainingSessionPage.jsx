@@ -44,6 +44,7 @@ export default function TrainingSessionPage() {
   const [loadError, setLoadError] = useState(false)
   const [xpFloat, setXpFloat] = useState(null)
   const [leveledUp, setLeveledUp] = useState(null)  // CEFR level from an auto-promotion
+  const [achievements, setAchievements] = useState([])  // newly unlocked, shown as a queue
   // End-of-session correction round (Duolingo-style): retry the ones you got wrong.
   const [correctionMode, setCorrectionMode] = useState(false)
   const [correctionIndex, setCorrectionIndex] = useState(0)
@@ -189,6 +190,9 @@ export default function TrainingSessionPage() {
       }
       if (res.data.leveled_up_to) {
         setLeveledUp(res.data.leveled_up_to)  // auto-promotion — show congrats
+      }
+      if (res.data.new_achievements?.length) {
+        setAchievements((a) => [...a, ...res.data.new_achievements])  // queue congrats
       }
       // Collect a wrong, retry-eligible exercise for the end-of-session correction round.
       if (!res.data.is_correct && currentEx.daily_exercise_id && RETRY_TYPES.includes(currentEx.type)) {
@@ -667,6 +671,25 @@ export default function TrainingSessionPage() {
                 Отмена
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {achievements.length > 0 && (
+        <div className="fixed inset-0 z-[70] bg-black/60 flex items-center justify-center p-4"
+             onClick={() => setAchievements((a) => a.slice(1))}>
+          <div className="bg-white rounded-2xl w-full max-w-sm p-6 text-center animate-scale-in"
+               onClick={(e) => e.stopPropagation()}>
+            <div className="text-5xl mb-3">{achievements[0].icon || '🏅'}</div>
+            <p className="text-xs uppercase tracking-wide text-amber-600 font-medium mb-1">Достижение получено!</p>
+            <h3 className="text-xl font-bold text-gray-900 mb-1">{achievements[0].title}</h3>
+            <p className="text-sm text-gray-500 mb-3">{achievements[0].description}</p>
+            {achievements[0].xp > 0 && (
+              <p className="text-sm font-bold text-yellow-600 mb-4">+{achievements[0].xp} XP</p>
+            )}
+            <Button className="w-full" onClick={() => setAchievements((a) => a.slice(1))}>
+              {achievements.length > 1 ? 'Дальше' : 'Отлично!'}
+            </Button>
           </div>
         </div>
       )}

@@ -708,7 +708,10 @@ backend/
                      `_API_SEMAPHORE = asyncio.Semaphore(3)` — максимум 3 параллельных вызова (защита от rate limit при 7 батчах);
                      `_pace_request()` — глобальный интервал 1с между стартами запросов (лимит Mistral — req/sec, code 1300; семафор сам по себе не спасает от одновременного старта);
                      `_log_call()` пишет model/purpose/tokens/duration/success/**error_message** в mistral_call_logs через raw sqlite3
-    gamification.py — XP, стрики, достижения;
+    gamification.py — XP, стрики, достижения (78 шт., `scripts/seed_achievements.py`, тиры: xp/streak/vocab_count(=used_words)/exercises_done/training_seconds/chat_messages/level_reached/all_level_topics);
+                       `check_achievements` возвращает новые → submit_answer кладёт в AnswerResponse.new_achievements → фронт показывает экран поздравления (ретроактивные выдаются тихо при первом прогоне);
+                       ВАЖНО: ачивка «слова» считает `count_used_words` (реальные ~1175), НЕ UserVocabulary.count — иначе «1000 слов есть, ачивка 500 не взята»;
+                       `maybe_promote_level`/`level_mastery_fraction`/`calculate_next_level_progress` — автоуровень (см. ниже);
                        XP_RANKS — 25 рангов (Новичок I→Эксперт V, 0→128000 XP);
                        XP_CORRECT=10, XP_INCORRECT=2, XP_VOCAB=5 (SRS-карточки в daily/bonus);
                        vocab-сессия (source="vocab"): XP_VOCAB_NEW=2 (новое/ошибочное), XP_VOCAB_REVIEW=1 (повторение), 0 за неверный;

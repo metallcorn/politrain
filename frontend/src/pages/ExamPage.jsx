@@ -26,8 +26,8 @@ export default function ExamPage() {
   return (
     <div className="flex flex-col gap-5">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Экзамен B1</h1>
-        <p className="text-gray-500 text-sm mt-0.5">Подготовка к официальному экзамену</p>
+        <h1 className="text-2xl font-bold text-gray-900">Испытай себя 🎓</h1>
+        <p className="text-gray-500 text-sm mt-0.5">Пробный экзамен в стиле польского сертификата — без риска, просто проверь себя. Аудирование и говорение появятся позже.</p>
       </div>
 
       {!unlocked && (
