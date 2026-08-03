@@ -3,8 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { examApi } from '../api'
 import { useAuthStore, useUIStore } from '../store'
 import Button from '../components/ui/Button'
-import Spinner from '../components/ui/Spinner'
-import { ArrowLeft } from 'lucide-react'
+import GenLoader from '../components/ui/GenLoader'
+import { ArrowLeft, GraduationCap } from 'lucide-react'
 
 export default function ExamTaskPage() {
   const { type } = useParams()
@@ -52,7 +52,16 @@ export default function ExamTaskPage() {
     }
   }
 
-  if (loading) return <div className="flex justify-center py-12"><Spinner /></div>
+  if (loading) return (
+    <GenLoader
+      icon={<GraduationCap size={40} className="text-purple-500 animate-pulse" />}
+      title="Готовим экзамен"
+      subtitle="Подбираем проверенные задания под твой уровень"
+      steps={['Выбираем задания...', 'Проверяем качество...', 'Почти готово...']}
+      barColor="bg-purple-500"
+      bgColor="bg-purple-50"
+    />
+  )
 
   return (
     <div className="flex flex-col gap-5">

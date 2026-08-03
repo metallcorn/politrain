@@ -5,7 +5,7 @@ import { CheckCircle, Zap, Flame, Sparkles, Clock, Star } from 'lucide-react'
 import { trainingApi, profileApi } from '../../api'
 import DailyGoalRing from './DailyGoalRing'
 
-export default function SessionResult({ correct, total, xpEarned, streak, mode, topic, sessionDuration, exerciseIds }) {
+export default function SessionResult({ correct, total, xpEarned, streak, mode, topic, sessionDuration, exerciseIds, wrongCount = 0, correctionsFixed = 0 }) {
   const navigate = useNavigate()
   const pct = total > 0 ? Math.round((correct / total) * 100) : 0
 
@@ -109,6 +109,13 @@ export default function SessionResult({ correct, total, xpEarned, streak, mode, 
           <p className="text-xs text-gray-500">Всего</p>
         </div>
       </div>
+
+      {wrongCount > 0 && (
+        <div className="w-full rounded-xl bg-amber-50 border border-amber-200 px-4 py-2 text-sm text-amber-800 text-center">
+          🔁 Исправлено {correctionsFixed} из {wrongCount} {wrongCount === 1 ? 'ошибки' : 'ошибок'}
+          {correctionsFixed === wrongCount ? ' — все! 🎉' : ''}
+        </div>
+      )}
 
       <div className="flex items-center gap-6 flex-wrap justify-center">
         <div className="flex items-center gap-2">

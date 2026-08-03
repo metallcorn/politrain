@@ -48,6 +48,7 @@ export default function TrainingSessionPage() {
   // End-of-session correction round (Duolingo-style): retry the ones you got wrong.
   const [correctionMode, setCorrectionMode] = useState(false)
   const [correctionIndex, setCorrectionIndex] = useState(0)
+  const [correctionsFixed, setCorrectionsFixed] = useState(0)
   const wrongListRef = useRef([])  // exercises answered wrong this session (retry-eligible)
   const [aiOpen, setAiOpen] = useState(false)
   const [aiTexts, setAiTexts] = useState({ 1: null, 2: null })
@@ -133,6 +134,7 @@ export default function TrainingSessionPage() {
     setAllVocabDone(false)
     setCorrectionMode(false)
     setCorrectionIndex(0)
+    setCorrectionsFixed(0)
     wrongListRef.current = []
     setExercises([])
     setCurrent(0)
@@ -161,6 +163,7 @@ export default function TrainingSessionPage() {
           setStats((s) => ({ ...s, xp: s.xp + res.data.xp_earned }))
           setXpFloat({ id: Date.now(), amount: res.data.xp_earned })
         }
+        if (res.data.is_correct) setCorrectionsFixed((n) => n + 1)
         setResult({ is_correct: res.data.is_correct, correct_answer: res.data.correct_answer })
       } catch {
         addToast('Ошибка проверки ответа', 'error')
@@ -459,6 +462,8 @@ export default function TrainingSessionPage() {
         topic={topic}
         sessionDuration={sessionDuration}
         exerciseIds={exercises.map(e => e.daily_exercise_id).filter(Boolean)}
+        wrongCount={wrongListRef.current.length}
+        correctionsFixed={correctionsFixed}
       />
     )
   }
@@ -486,7 +491,7 @@ export default function TrainingSessionPage() {
       {correctionMode && (
         <div className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-2 text-sm text-amber-800 flex items-center gap-2 animate-fade-in">
           <span>🔁</span>
-          <span>Исправь ошибки — второй шанс. Верный ответ = +половина XP (ошибка всё равно вернётся на повторение).</span>
+          <span>Ещё один шанс <span className="text-amber-500">· +½ XP</span></span>
         </div>
       )}
       <div className="flex items-center gap-3">

@@ -1548,15 +1548,28 @@ async def build_exam_grammar(user, db: Session, level: str = None, count: int = 
     return out
 
 
-async def build_validated_reading(user, db: Session, level: str = None) -> dict | None:
+async def build_validated_reading(user, db: Session, level: str = None, exam: bool = False) -> dict | None:
     """Generate + validate ONE reading passage and return the dict (no DB write). Shared by
     the daily reading mode AND the self-test exam so both get the same label-stripping /
-    letter-mapping / well-formed-question filtering. Returns None if generation failed."""
-    gen_level = level or user.level
+    letter-mapping / well-formed-question filtering. Returns None if generation failed.
+
+    exam=True (feedback #196/#192): a real test, not daily practice — pull the level UP,
+    make the text longer, and force INFERENCE questions (not copied verbatim, some phrased
+    in the user's language) so the answer isn't obvious with the text in front of you."""
+    gen_level = level or (_next_level(user.level) if exam else user.level)
     themes = _select_interest_themes(user.content_preferences)
     prompt = prompts.READING_PROMPT.format(
         level=gen_level, native_language=lang_name(user.native_language), interest_themes=themes,
     )
+    if exam:
+        prompt = (
+            "EXAM MODE — make this harder than daily practice:\n"
+            "- The text must be LONGER: 9-13 sentences, a real B1-level passage.\n"
+            "- Questions must require INFERENCE or understanding of MEANING, not a phrase copied "
+            "verbatim from the text (the reader has the text in front of them — verbatim is trivial).\n"
+            f"- Phrase at least one question in {lang_name(user.native_language)} (about the meaning), the rest in Polish.\n\n"
+            + prompt
+        )
     raw = None
     for model_name, timeout_sec in [("mistral-large-latest", 60.0), ("mistral-small-latest", 40.0)]:
         try:

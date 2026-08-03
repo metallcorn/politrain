@@ -92,7 +92,7 @@ async def get_task(
         # Validated pipeline (2026-08-06): same label-stripping / letter-mapping / well-formed
         # filtering as the daily reading mode — the exam no longer serves raw Mistral output.
         try:
-            data = await build_validated_reading(current_user, db)
+            data = await build_validated_reading(current_user, db, exam=True)
             if not data:
                 return {"type": "reading", "data": None, "error": "AI временно недоступен"}
             return {"type": "reading", "data": data}
@@ -103,7 +103,9 @@ async def get_task(
         # Validated pipeline: pool-first (already past all validators/dedup) + validated
         # top-up. No more raw GRAMMAR_EXAM_PROMPT with its wrong-answer/meta-question bugs.
         try:
-            questions = await build_exam_grammar(current_user, db, count=12)
+            # exam challenges the level you're climbing toward, not the one you already have
+            from services.generation import _next_level
+            questions = await build_exam_grammar(current_user, db, level=_next_level(current_user.level), count=12)
             if not questions:
                 return {"type": "grammar", "questions": [], "error": "AI временно недоступен"}
             return {"type": "grammar", "questions": questions}
