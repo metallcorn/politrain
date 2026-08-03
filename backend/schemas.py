@@ -165,6 +165,7 @@ class AnswerResponse(BaseModel):
     explanation: Optional[str] = None
     xp_earned: int = 0
     diacritic_hint: bool = False
+    leveled_up_to: Optional[str] = None  # new CEFR level if this answer triggered a promotion
 
 
 class TrainingSessionResponse(BaseModel):
@@ -255,6 +256,8 @@ class ProfileResponse(BaseModel):
     xp_to_next_level: int
     xp_rank_start: int = 0
     progress_to_b1: float
+    next_level_target: str = ""       # dynamic: the level you're climbing toward
+    next_level_percent: float = 0.0   # mastery of that next level (100% ≈ promotion)
     total_exercises: int
     total_chat_messages: int
     vocab_count: int

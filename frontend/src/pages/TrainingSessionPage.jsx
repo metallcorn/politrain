@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { trainingApi } from '../api'
-import { useUIStore } from '../store'
+import { useUIStore, useAuthStore } from '../store'
 import Spinner from '../components/ui/Spinner'
 import Button from '../components/ui/Button'
 import Flashcard from '../components/training/Flashcard'
@@ -22,6 +22,7 @@ export default function TrainingSessionPage() {
   const [params] = useSearchParams()
   const navigate = useNavigate()
   const { addToast } = useUIStore()
+  const { fetchMe } = useAuthStore()
   const mode = params.get('mode') || 'daily'
   const topic = params.get('topic') || null
   const refreshKey = params.get('t') || '0'
@@ -42,6 +43,7 @@ export default function TrainingSessionPage() {
   const [loadStep, setLoadStep] = useState(0)
   const [loadError, setLoadError] = useState(false)
   const [xpFloat, setXpFloat] = useState(null)
+  const [leveledUp, setLeveledUp] = useState(null)  // CEFR level from an auto-promotion
   const [aiOpen, setAiOpen] = useState(false)
   const [aiTexts, setAiTexts] = useState({ 1: null, 2: null })
   const [aiLevel, setAiLevel] = useState(1)
@@ -155,6 +157,9 @@ export default function TrainingSessionPage() {
       }))
       if (res.data.is_correct && res.data.xp_earned > 0) {
         setXpFloat({ id: Date.now(), amount: res.data.xp_earned })
+      }
+      if (res.data.leveled_up_to) {
+        setLeveledUp(res.data.leveled_up_to)  // auto-promotion — show congrats
       }
       if (autoAdvance) {
         handleNext()
@@ -605,6 +610,23 @@ export default function TrainingSessionPage() {
                 Отмена
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {leveledUp && (
+        <div className="fixed inset-0 z-[60] bg-black/60 flex items-center justify-center p-4"
+             onClick={() => { setLeveledUp(null); fetchMe?.() }}>
+          <div className="bg-white rounded-2xl w-full max-w-sm p-6 text-center animate-scale-in"
+               onClick={(e) => e.stopPropagation()}>
+            <div className="text-5xl mb-3">🎉</div>
+            <h3 className="text-xl font-bold text-gray-900 mb-1">Новый уровень!</h3>
+            <p className="text-gray-600 mb-1">Ты освоил достаточно, чтобы перейти на</p>
+            <p className="text-3xl font-extrabold text-primary-700 mb-4">{leveledUp}</p>
+            <p className="text-sm text-gray-500 mb-5">Теперь задания и слова будут подтягивать тебя к следующему уровню.</p>
+            <Button className="w-full" onClick={() => { setLeveledUp(null); fetchMe?.() }}>
+              Отлично!
+            </Button>
           </div>
         </div>
       )}

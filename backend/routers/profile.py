@@ -9,7 +9,7 @@ from database import get_db
 from auth import get_current_user
 import models
 import schemas
-from services.gamification import get_game_level, calculate_b1_progress, count_used_words
+from services.gamification import get_game_level, calculate_b1_progress, count_used_words, calculate_next_level_progress
 
 router = APIRouter(prefix="/profile", tags=["profile"])
 
@@ -21,6 +21,7 @@ def get_profile(
 ):
     level, level_name, xp_to_next, rank_start = get_game_level(current_user.xp)
     b1_progress = calculate_b1_progress(current_user.id, db)
+    next_level = calculate_next_level_progress(current_user.id, db, current_user.level)
 
     curriculum_exercises = db.query(models.UserExerciseHistory).filter(
         models.UserExerciseHistory.user_id == current_user.id
@@ -74,6 +75,8 @@ def get_profile(
         xp_to_next_level=xp_to_next,
         xp_rank_start=rank_start,
         progress_to_b1=b1_progress,
+        next_level_target=next_level["target"],
+        next_level_percent=next_level["percent"],
         total_exercises=total_exercises,
         total_chat_messages=total_chat,
         vocab_count=vocab_count,

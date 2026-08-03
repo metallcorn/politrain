@@ -211,6 +211,60 @@ def check_achievements(user: models.User, db: Session) -> list[models.Achievemen
 # the old formula used ALL topics as the denominator, so adding topics dropped the bar even
 # though the user learned nothing (2026-07-29: +6 B1 topics knocked ~79% down to ~65%).
 _TO_B1_LEVELS = ("A0", "A1", "A2", "B1")
+_LEVEL_ORDER = ["A0", "A1", "A2", "B1", "B2", "C1", "C2"]
+_PROMOTE_THRESHOLD = 0.80  # master ≥80% of a level's topics → you ARE that level (user rule 2026-08-03)
+
+
+def _level_next(level: str) -> str:
+    if level not in _LEVEL_ORDER:
+        return level
+    i = _LEVEL_ORDER.index(level)
+    return _LEVEL_ORDER[i + 1] if i + 1 < len(_LEVEL_ORDER) else level
+
+
+def level_mastery_fraction(user_id: int, db: Session, level: str) -> float:
+    """0..1 mastery of ONE level's topics, partial credit by score (done=1, else score)."""
+    topic_ids = [t[0] for t in db.query(models.Topic.id).filter(
+        models.Topic.level_required == level
+    ).all()]
+    if not topic_ids:
+        return 0.0
+    by_topic = {
+        p.topic_id: p for p in db.query(models.UserTopicProgress).filter(
+            models.UserTopicProgress.user_id == user_id,
+            models.UserTopicProgress.topic_id.in_(topic_ids),
+        ).all()
+    }
+    credit = sum(
+        (1.0 if p.status == "done" else min(p.score or 0.0, 0.95))
+        for p in (by_topic.get(tid) for tid in topic_ids) if p
+    )
+    return credit / len(topic_ids)
+
+
+def maybe_promote_level(user, db: Session) -> str | None:
+    """Auto-level (user rule 2026-08-03: no exam gate — the dynamic estimate IS the level).
+    Promote when the user has mastered ≥80% of the NEXT level's topics. One-way (never
+    auto-demote — a slipped score shouldn't cost a level). Returns the new level if promoted."""
+    cur = user.level
+    nxt = _level_next(cur)
+    if nxt == cur:
+        return None  # already at the ceiling
+    if level_mastery_fraction(user.id, db, nxt) >= _PROMOTE_THRESHOLD:
+        user.level = nxt
+        db.add(user)
+        return nxt
+    return None
+
+
+def calculate_next_level_progress(user_id: int, db: Session, current_level: str) -> dict:
+    """Dynamic 'progress to next level' (relative, not hardcoded B1). Returns
+    {target, percent}. Mastery of the next level's topics; 100% ≈ promotion."""
+    nxt = _level_next(current_level)
+    if nxt == current_level:
+        return {"target": current_level, "percent": 100.0}
+    return {"target": nxt, "percent": round(level_mastery_fraction(user_id, db, nxt) * 100, 1)}
+
 
 def calculate_b1_progress(user_id: int, db: Session) -> float:
     """Honest, responsive progress through the A0..B1 curriculum. Denominator capped at B1

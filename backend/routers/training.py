@@ -20,7 +20,7 @@ from services.i18n import lang_name
 from services.sm2 import calculate_next_review
 from services.gamification import (
     add_xp, XP_CORRECT, XP_INCORRECT, XP_VOCAB, XP_VOCAB_NEW, XP_VOCAB_REVIEW, XP_COMPLETE_SESSION,
-    check_achievements, update_daily_activity, update_streak
+    check_achievements, update_daily_activity, update_streak, maybe_promote_level
 )
 
 
@@ -959,6 +959,9 @@ async def submit_answer(
     update_streak(current_user, db)
     update_daily_activity(current_user.id, db, xp_earned=xp, exercises_done=1)
     check_achievements(current_user, db)
+    # Auto-level: mastering ≥80% of the next level's topics promotes you (user rule 2026-08-03,
+    # no exam gate). Checked here so promotion lands right after the answer that crossed it.
+    leveled_up_to = maybe_promote_level(current_user, db)
     db.commit()
 
     return schemas.AnswerResponse(
@@ -967,6 +970,7 @@ async def submit_answer(
         explanation=explanation,
         xp_earned=xp,
         diacritic_hint=diacritic_hint,
+        leveled_up_to=leveled_up_to,
     )
 
 

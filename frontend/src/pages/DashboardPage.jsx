@@ -78,7 +78,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {profile && <ProgressToB1 progress={profile.progress_to_b1} />}
+      {profile && <ProgressToB1 progress={profile.next_level_percent ?? profile.progress_to_b1} target={profile.next_level_target || 'B1'} />}
 
       {/* Weak spots */}
       {profile?.weak_spots?.length > 0 && (

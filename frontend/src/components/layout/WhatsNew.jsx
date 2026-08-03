@@ -6,6 +6,14 @@ import { Gift, X, Sparkles } from 'lucide-react'
 // user has opened is stored in localStorage, and a red dot shows while unseen ids exist.
 const CHANGELOG = [
   {
+    id: '2026-08-04',
+    title: 'Уровень повышается сам',
+    items: [
+      'Больше никакого потолка: как только освоишь ≥80% тем следующего уровня, приложение автоматически повысит тебя (A2 → B1 → B2). Никаких экзаменов — твой прогресс и есть твой уровень.',
+      'Шкала прогресса теперь показывает путь к твоему следующему уровню (не только к B1).',
+    ],
+  },
+  {
     id: '2026-08-03',
     title: 'Лестница до B2',
     items: [
