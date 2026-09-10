@@ -136,10 +136,10 @@ export default function AdminPage() {
       )}
 
       {/* Tabs */}
-      <div className="flex gap-2 border-b border-gray-200">
+      <div className="flex gap-2 border-b border-gray-200 overflow-x-auto -mx-4 px-4 scrollbar-none">
         <button
           onClick={() => setTab('reports')}
-          className={`flex items-center gap-1.5 pb-2 text-sm font-medium border-b-2 transition-colors ${
+          className={`flex items-center gap-1.5 pb-2 text-sm font-medium border-b-2 transition-colors flex-shrink-0 whitespace-nowrap ${
             tab === 'reports' ? 'border-primary-800 text-primary-800' : 'border-transparent text-gray-500'
           }`}
         >
@@ -153,7 +153,7 @@ export default function AdminPage() {
         </button>
         <button
           onClick={() => setTab('users')}
-          className={`flex items-center gap-1.5 pb-2 text-sm font-medium border-b-2 transition-colors ${
+          className={`flex items-center gap-1.5 pb-2 text-sm font-medium border-b-2 transition-colors flex-shrink-0 whitespace-nowrap ${
             tab === 'users' ? 'border-primary-800 text-primary-800' : 'border-transparent text-gray-500'
           }`}
         >
@@ -162,7 +162,7 @@ export default function AdminPage() {
         </button>
         <button
           onClick={() => setTab('feedback')}
-          className={`flex items-center gap-1.5 pb-2 text-sm font-medium border-b-2 transition-colors ${
+          className={`flex items-center gap-1.5 pb-2 text-sm font-medium border-b-2 transition-colors flex-shrink-0 whitespace-nowrap ${
             tab === 'feedback' ? 'border-primary-800 text-primary-800' : 'border-transparent text-gray-500'
           }`}
         >
@@ -176,7 +176,7 @@ export default function AdminPage() {
         </button>
         <button
           onClick={() => setTab('mistral')}
-          className={`flex items-center gap-1.5 pb-2 text-sm font-medium border-b-2 transition-colors ${
+          className={`flex items-center gap-1.5 pb-2 text-sm font-medium border-b-2 transition-colors flex-shrink-0 whitespace-nowrap ${
             tab === 'mistral' ? 'border-primary-800 text-primary-800' : 'border-transparent text-gray-500'
           }`}
         >
@@ -185,7 +185,7 @@ export default function AdminPage() {
         </button>
         <button
           onClick={() => setTab('system')}
-          className={`flex items-center gap-1.5 pb-2 text-sm font-medium border-b-2 transition-colors ${
+          className={`flex items-center gap-1.5 pb-2 text-sm font-medium border-b-2 transition-colors flex-shrink-0 whitespace-nowrap ${
             tab === 'system' ? 'border-primary-800 text-primary-800' : 'border-transparent text-gray-500'
           }`}
         >
