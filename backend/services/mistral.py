@@ -11,6 +11,34 @@ MISTRAL_API_URL = "https://api.mistral.ai/v1/chat/completions"
 MISTRAL_MODEL = os.getenv("MISTRAL_MODEL", "mistral-large-latest")
 _DB_PATH = os.path.join(os.path.dirname(__file__), "..", "politrain.db")
 
+# Live key: read from app_settings (set via admin) first, env fallback. Lets the admin
+# swap a dead key from the UI with NO restart/.env edit (the 11-day silent outage on
+# 2026-08-30 — a stale env key — is exactly what this fixes). Cached ~10s to avoid a DB
+# read on every call.
+_key_cache = {"value": None, "at": 0.0}
+
+
+def current_key() -> str:
+    now = time.monotonic()
+    if _key_cache["value"] is not None and now - _key_cache["at"] < 10:
+        return _key_cache["value"]
+    key = MISTRAL_API_KEY
+    try:
+        conn = sqlite3.connect(_DB_PATH)
+        row = conn.execute("SELECT value FROM app_settings WHERE key='mistral_api_key'").fetchone()
+        conn.close()
+        if row and row[0]:
+            key = row[0]
+    except Exception:
+        pass
+    _key_cache["value"] = key
+    _key_cache["at"] = now
+    return key
+
+
+def invalidate_key_cache():
+    _key_cache["value"] = None
+
 # Limit concurrent Mistral calls to avoid rate limiting when many batches fire at once
 _API_SEMAPHORE = asyncio.Semaphore(3)
 
@@ -58,12 +86,13 @@ async def chat_completion(
     purpose: Optional[str] = None,
     user_id: Optional[int] = None,
 ) -> str:
-    if not MISTRAL_API_KEY:
+    _key = current_key()
+    if not _key:
         raise ValueError("MISTRAL_API_KEY not set")
 
     used_model = model or MISTRAL_MODEL
     headers = {
-        "Authorization": f"Bearer {MISTRAL_API_KEY}",
+        "Authorization": f"Bearer {_key}",
         "Content-Type": "application/json",
     }
     payload = {

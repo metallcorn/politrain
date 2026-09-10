@@ -449,3 +449,91 @@ def triage_resolve(
             n_f += 1
     db.commit()
     return {"reports_resolved": n_r, "feedback_resolved": n_f}
+
+
+@router.get("/system")
+async def system_health(
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(require_admin),
+):
+    """One-call system health for the admin panel: Mistral key liveness + spend, failure
+    verdict, pool size, DB size. Surfaces problems HERE instead of only in the logs
+    (the 2026-08-30 dead-key outage was invisible for 11 days)."""
+    import httpx
+    from services import mistral as _mistral
+
+    # live key check (1 cheap GET to /models)
+    key = _mistral.current_key()
+    key_status = "missing"
+    key_tail = key[-4:] if key else ""
+    if key:
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                r = await client.get("https://api.mistral.ai/v1/models",
+                                     headers={"Authorization": f"Bearer {key}"})
+            key_status = "ok" if r.status_code == 200 else ("unauthorized" if r.status_code == 401 else f"http_{r.status_code}")
+        except Exception as e:
+            key_status = f"error: {type(e).__name__}"
+
+    # 24h Mistral call verdict
+    since = "datetime('now','-1 day')"
+    ok_24 = db.execute(__import__("sqlalchemy").text(
+        f"SELECT COUNT(*) FROM mistral_call_logs WHERE success=1 AND created_at >= {since}")).scalar()
+    fail_24 = db.execute(__import__("sqlalchemy").text(
+        f"SELECT COUNT(*) FROM mistral_call_logs WHERE success=0 AND created_at >= {since}")).scalar()
+    auth_fail_24 = db.execute(__import__("sqlalchemy").text(
+        f"SELECT COUNT(*) FROM mistral_call_logs WHERE success=0 AND error_message LIKE '%401%' AND created_at >= {since}")).scalar()
+
+    # where is the key set from?
+    db_key = db.execute(__import__("sqlalchemy").text(
+        "SELECT value FROM app_settings WHERE key='mistral_api_key'")).fetchone()
+    key_source = "admin (база)" if (db_key and db_key[0]) else "env"
+
+    pool_active = db.query(models.ExercisePool).filter(
+        models.ExercisePool.is_active == True).count()  # noqa: E712
+    pool_total = db.query(models.ExercisePool).count()
+
+    db_bytes = 0
+    try:
+        db_bytes = os.path.getsize(os.path.join(os.path.dirname(__file__), "..", "politrain.db"))
+    except Exception:
+        pass
+
+    return {
+        "key": {"status": key_status, "tail": key_tail, "source": key_source},
+        "mistral_24h": {"ok": ok_24, "failed": fail_24, "auth_failed": auth_fail_24},
+        "pool": {"active": pool_active, "total": pool_total},
+        "db_mb": round(db_bytes / 1048576, 1),
+    }
+
+
+@router.post("/mistral-key")
+async def set_mistral_key(
+    body: dict,
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(require_admin),
+):
+    """Set a new Mistral API key from the admin UI (no .env edit, no restart). The key is
+    VALIDATED with a live call before saving — a bad key is rejected, so you can't lock
+    yourself out. Never returns the key; masked everywhere."""
+    import httpx
+    from services import mistral as _mistral
+
+    new_key = (body.get("key") or "").strip()
+    if not new_key or len(new_key) < 20:
+        raise HTTPException(status_code=400, detail="Ключ пустой или слишком короткий")
+    try:
+        async with httpx.AsyncClient(timeout=12) as client:
+            r = await client.get("https://api.mistral.ai/v1/models",
+                                 headers={"Authorization": f"Bearer {new_key}"})
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Не удалось проверить ключ: {type(e).__name__}")
+    if r.status_code != 200:
+        raise HTTPException(status_code=400, detail=f"Ключ не принят Mistral (HTTP {r.status_code})")
+
+    db.execute(__import__("sqlalchemy").text(
+        "INSERT INTO app_settings (key, value, updated_at) VALUES ('mistral_api_key', :v, datetime('now')) "
+        "ON CONFLICT(key) DO UPDATE SET value=:v, updated_at=datetime('now')"), {"v": new_key})
+    db.commit()
+    _mistral.invalidate_key_cache()
+    return {"ok": True, "status": "ok", "tail": new_key[-4:]}

@@ -127,6 +127,8 @@ export const adminApi = {
   mistralUsage: (days = 30) => api.get(`/admin/mistral-usage?days=${days}`),
   poolStats: () => api.get('/admin/exercise-pool/stats'),
   togglePool: (id) => api.post(`/admin/exercise-pool/${id}/toggle`),
+  system: () => api.get('/admin/system'),
+  setMistralKey: (key) => api.post('/admin/mistral-key', { key }),
 }
 
 // Profile

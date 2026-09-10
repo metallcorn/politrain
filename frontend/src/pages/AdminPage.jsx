@@ -5,8 +5,9 @@ import api from '../api'
 import { adminApi } from '../api'
 import Spinner from '../components/ui/Spinner'
 import Button from '../components/ui/Button'
-import { ArrowLeft, CheckCircle, Trash2, RefreshCw, Users, AlertCircle, MessageSquare, BarChart2 } from 'lucide-react'
+import { ArrowLeft, CheckCircle, Trash2, RefreshCw, Users, AlertCircle, MessageSquare, BarChart2, Activity } from 'lucide-react'
 import MistralUsageChart from '../components/admin/MistralUsageChart'
+import SystemHealth from '../components/admin/SystemHealth'
 
 const TYPE_LABELS = {
   fill_blank: 'Заполни пропуск',
@@ -180,7 +181,16 @@ export default function AdminPage() {
           }`}
         >
           <BarChart2 size={15} />
-          API
+          Расход
+        </button>
+        <button
+          onClick={() => setTab('system')}
+          className={`flex items-center gap-1.5 pb-2 text-sm font-medium border-b-2 transition-colors ${
+            tab === 'system' ? 'border-primary-800 text-primary-800' : 'border-transparent text-gray-500'
+          }`}
+        >
+          <Activity size={15} />
+          Система
         </button>
       </div>
 
@@ -354,6 +364,8 @@ export default function AdminPage() {
         </>
       ) : tab === 'mistral' ? (
         <MistralUsageChart />
+      ) : tab === 'system' ? (
+        <SystemHealth />
       ) : null}
     </div>
   )

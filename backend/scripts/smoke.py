@@ -113,6 +113,16 @@ def main():
     fails = c.fetchone()[0]
     check("mistral failures 24h", fails <= 3, f"{fails} failed calls", warn_only=fails <= 10)
 
+    # 5b. HARD FAIL on a dead key: calls happened in 24h and ALL failed on auth (401).
+    # This is exactly the 2026-08-30 outage that health/smoke missed for 11 days —
+    # the passive checks were green while every generation 401'd. Now it's caught day one.
+    c.execute("SELECT COUNT(*) FROM mistral_call_logs WHERE success=1 AND created_at >= datetime('now','-1 day')")
+    ok = c.fetchone()[0]
+    c.execute("SELECT COUNT(*) FROM mistral_call_logs WHERE success=0 AND error_message LIKE '%401%' AND created_at >= datetime('now','-1 day')")
+    auth_fails = c.fetchone()[0]
+    check("mistral key alive", not (auth_fails > 0 and ok == 0),
+          f"{auth_fails} auth(401) failures, 0 successes — key dead? set a new one in Admin → Система")
+
     # 6. queues readable
     c.execute("SELECT COUNT(*) FROM generated_exercise_reports WHERE is_resolved=0")
     check("open reports", True, str(c.fetchone()[0]))

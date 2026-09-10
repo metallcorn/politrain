@@ -376,6 +376,14 @@ export default function TrainingSessionPage() {
       />
     }
 
+    if (mode === 'reading') {
+      return <GenLoader
+        icon={<BookOpen size={40} className="text-teal-500 animate-pulse" />}
+        color={{ bg: 'bg-teal-50', icon: '', bar: 'bg-teal-500' }}
+        title="Готовим текст для чтения"
+        subtitle="Подбираем интересный отрывок и вопросы к нему"
+      />
+    }
     if (mode === 'vocab') {
       return (
         <div className="flex flex-col items-center gap-6 py-12 text-center px-4">
